@@ -1,7 +1,9 @@
+use crate::algorithms::astar::metrics::PathfindingMetrics;
 use crate::algorithms::map::{corresponding_room_edge, next_directions};
 use crate::datatypes::ClockworkCostMatrix;
 use crate::datatypes::MultiroomDistanceMap;
 use crate::datatypes::RoomDataCache;
+use crate::log;
 use crate::utils::set_panic_hook;
 use screeps::Direction;
 use screeps::Position;
