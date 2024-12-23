@@ -3,6 +3,7 @@ import {
   ClockworkCostMatrix,
   getTerrainCostMatrix as clockworkGetTerrainCostMatrix,
   ephemeral,
+  jpsDistanceMap,
   jpsPath
 } from '../../src/index';
 
@@ -143,6 +144,30 @@ export default [
       const path = ephemeral(distanceMap.pathToOrigin(targetFlag.pos));
       const pathArray = path.toArray();
       visualizePath(pathArray);
+    }
+  },
+  {
+    name: 'JPS Distance Map',
+    color1: COLOR_YELLOW,
+    color2: COLOR_RED,
+    /**
+     * Visualization of a JPS path.
+     */
+    run(rooms) {
+      const [originFlag, targetFlag, ...rest] = Object.values(rooms).reduce((acc, flags) => [...acc, ...flags], []);
+      if (!originFlag || !targetFlag) {
+        return;
+      }
+
+      const distanceMap = ephemeral(
+        jpsDistanceMap([originFlag.pos], [targetFlag.pos], {
+          costMatrixCallback: getTerrainCostMatrix,
+          maxOps: 10000
+        })
+      );
+      for (const room of distanceMap.getRooms()) {
+        visualizeDistanceMap(room, distanceMap.getRoom(room)!);
+      }
     }
   },
   {
