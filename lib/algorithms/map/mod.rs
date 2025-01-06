@@ -44,7 +44,7 @@ pub fn neighbors(position: Position) -> impl Iterator<Item = Position> {
 }
 
 /// Adjacency in Screeps is not perfectly euclidean: we need to apply
-/// special rules at room edges.
+/// special rules at room edges, but not in this function.
 pub fn neighbors_without_edges(position: Position) -> impl Iterator<Item = Position> {
     PREFERRED_DIRECTIONS
         .iter()

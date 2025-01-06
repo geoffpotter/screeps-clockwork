@@ -7,6 +7,8 @@ import {
   js_path_to_multiroom_distance_map_origin
 } from '../wasm/screeps_clockwork';
 import { ClockworkPath } from './path';
+import { visualizeDistanceMap } from '../../test/visualizations/helpers/visualizeDistanceMap';
+import { ClockworkMultiroomDistanceMap } from './multiroomDistanceMap';
 
 /**
  * Create a distance map for the given start positions, using JPS.
@@ -47,5 +49,9 @@ export function jpsPath(
     )
   );
 
+  // const distanceMap_test = new ClockworkMultiroomDistanceMap(distanceMap);
+  // for (const room of distanceMap_test.getRooms()) {
+  //   visualizeDistanceMap(room, distanceMap_test.getRoom(room)!);
+  // }
   return new ClockworkPath(js_path_to_multiroom_distance_map_origin(destinationsPacked[0], distanceMap));
 }

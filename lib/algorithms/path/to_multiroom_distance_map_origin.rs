@@ -3,7 +3,9 @@ use crate::algorithms::map::neighbors_without_edges;
 use crate::datatypes::MultiroomDistanceMap;
 use crate::datatypes::Path;
 use crate::log;
+use screeps::CircleStyle;
 use screeps::Position;
+use screeps::RoomVisual;
 use std::collections::HashSet;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::throw_str;
@@ -62,7 +64,7 @@ pub fn path_to_multiroom_distance_map_origin(
 
         steps += 1;
     }
-
+    
     Err("Path exceeded maximum length")
 }
 

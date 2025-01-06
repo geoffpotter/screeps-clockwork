@@ -374,6 +374,8 @@ dependencies = [
  "rustc-hash",
  "screeps-game-api",
  "screeps-game-utils",
+ "serde",
+ "serde-wasm-bindgen",
  "wasm-bindgen",
  "web-sys",
 ]

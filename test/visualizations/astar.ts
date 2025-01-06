@@ -2,9 +2,11 @@ import {
   astarMultiroomDistanceMap,
   ClockworkCostMatrix,
   getTerrainCostMatrix as clockworkGetTerrainCostMatrix,
+  ClockworkPath,
   ephemeral,
   jpsDistanceMap,
-  jpsPath
+  jpsPath,
+  RustPathFinder
 } from '../../src/index';
 
 
@@ -182,15 +184,210 @@ export default [
       if (!originFlag || !targetFlag) {
         return;
       }
+      let from = originFlag.pos;
+      let to = targetFlag.pos;
+      const iterations = 1;
 
-      const path = ephemeral(
-        jpsPath([originFlag.pos], [targetFlag.pos], {
-          costMatrixCallback: getTerrainCostMatrix,
-          maxOps: 10000
-        })
-      );
-      const pathArray = path.toArray();
+      let pathFinderPath: PathFinderPath;
+      const visitedRooms = new Set<string>();
+      const pathFinderTime = cpuTime(() => {
+        pathFinderPath = PathFinder.search(to, {pos: from, range: 0}, {
+          maxCost: 1500,
+          maxOps: 10000,
+          roomCallback: roomName => {
+            visitedRooms.add(roomName);
+            return new PathFinder.CostMatrix();
+          },
+          heuristicWeight: 1
+        });
+      }, iterations);
+  
+
+      visualizePath(pathFinderPath!.path, "red");
+      cache.clear();
+      let clockworkPath: ClockworkPath;
+      // ephemeral(
+      //   jpsPath([from], [to], {
+      //     costMatrixCallback: roomName => {
+      //       if (cache.has(roomName)) {
+      //         return cache.get(roomName);
+      //       }
+      //       const costMatrix = ephemeral(getTerrainCostMatrix(roomName));
+      //       cache.set(roomName, costMatrix);
+      //       return costMatrix;
+      //     }
+      //   })
+      // );
+      
+      const clockworkTime = cpuTime(() => {
+        clockworkPath = ephemeral(
+          jpsPath([from], [to], {
+            maxOps: Game.time % 20 + 10000,
+            
+            // maxOps: 10000,
+            costMatrixCallback: roomName => {
+              // let startCpu = Game.cpu.getUsed();
+              if (Game.map.getRoomStatus(roomName).status != "normal") {
+                console.log('Room not normal', roomName);
+                return;
+              }
+              if (cache.has(roomName)) {
+                // console.log('Cache hit', roomName);
+                // let endCpu = Game.cpu.getUsed();
+                // console.log('CM Cpu time', endCpu - startCpu);
+                return cache.get(roomName);
+              }
+              // console.log('Cache miss', roomName);
+              const costMatrix = ephemeral(getTerrainCostMatrix(roomName, { plainCost: 1, swampCost: 5, wallCost: 255 }));
+              // let endCpu = Game.cpu.getUsed();
+              // console.log('CM Cpu time', endCpu - startCpu);
+              cache.set(roomName, costMatrix);
+              return costMatrix;
+            }
+          })
+        );
+      }, iterations);
+  
+
+      let weight = 0.1;
+      if (avg_cw_time === 0) {
+        avg_cw_time = clockworkTime * 0.5;
+      }
+      if (avg_pf_time === 0) {
+        avg_pf_time = pathFinderTime * 0.5;
+      }
+      avg_cw_time = (avg_cw_time * (1 - weight)) + (clockworkTime * weight);
+      avg_pf_time = (avg_pf_time * (1 - weight)) + (pathFinderTime * weight);
+      console.log(`Clockwork Time: ${avg_cw_time.toFixed(2)}, this tick: ${clockworkTime.toFixed(2)}`);
+      console.log('Clockwork Path', clockworkPath!.length, "rooms opened", cache.size);
+      console.log(`PathFinder Time: ${avg_pf_time.toFixed(2)}, this tick: ${pathFinderTime.toFixed(2)}`);
+      console.log('PathFinder Path', pathFinderPath!.path.length, "rooms opened", visitedRooms.size, "ops", pathFinderPath!.ops);
+
+
+      // const path = ephemeral(
+      //   jpsPath([originFlag.pos], [targetFlag.pos], {
+      //     costMatrixCallback: getTerrainCostMatrix,
+      //     maxOps: 10000
+      //   })
+      // );
+      // const pathArray = path.toArray();
+      let pathArray = clockworkPath!.toArray();
       visualizePath(pathArray);
+    }
+  },
+  {
+    name: 'Rust PathFinder',
+    color1: COLOR_YELLOW,
+    color2: COLOR_CYAN,
+    /**
+     * Visualization of the Rust-based pathfinder implementation.
+     */
+    run(rooms) {
+      const [originFlag, targetFlag, ...rest] = Object.values(rooms).reduce((acc, flags) => [...acc, ...flags], []);
+      if (!originFlag || !targetFlag) {
+        return;
+      }
+      let from = originFlag.pos;
+      let to = targetFlag.pos;
+      const iterations = 1;
+
+      // Initialize Rust pathfinder
+      const rustPathFinder = new RustPathFinder(
+        1,  // plain cost
+        5,  // swamp cost
+        16, // max rooms
+        10000, // max operations
+        1500000, // max cost
+        false, // flee mode
+        1.2  // heuristic weight
+      );
+
+      let rustPath: RoomPosition[] = [];
+      const visitedRooms = new Set<string>();
+      const rustTime = cpuTime(() => {
+        rustPath = rustPathFinder.search(
+          from,
+          [to],
+          (roomName: string) => {
+            visitedRooms.add(roomName);
+            if (Game.map.getRoomStatus(roomName).status !== "normal") {
+              return null;
+            }
+            const terrain = Game.map.getRoomTerrain(roomName);
+            const terrainData = new Uint8Array(2500);
+            for (let y = 0; y < 50; y++) {
+              for (let x = 0; x < 50; x++) {
+                const idx = y * 50 + x;
+                terrainData[idx] = terrain.get(x, y);
+              }
+            }
+            return {
+              terrain: terrainData,
+              cost_matrix: null // Using default terrain costs for now
+            };
+          }
+        ) || [];
+      }, iterations);
+
+      // Compare with built-in PathFinder
+      let pathFinderPath: PathFinderPath;
+      const pfVisitedRooms = new Set<string>();
+      const pathFinderTime = cpuTime(() => {
+        pathFinderPath = PathFinder.search(to, {pos: from, range: 0}, {
+          maxCost: 1500,
+          maxOps: 10000,
+          roomCallback: roomName => {
+            pfVisitedRooms.add(roomName);
+            return new PathFinder.CostMatrix();
+          },
+          heuristicWeight: 1.2
+        });
+      }, iterations);
+
+      // Visualize both paths
+      visualizePath(pathFinderPath!.path, "red");
+      visualizePath(rustPath, "blue");
+
+      // Group positions by room for visualization
+      const positionsByRoom = new Map<string, RoomPosition[]>();
+      for (const pos of rustPath) {
+        if (!positionsByRoom.has(pos.roomName)) {
+          positionsByRoom.set(pos.roomName, []);
+        }
+        positionsByRoom.get(pos.roomName)!.push(pos);
+      }
+
+      // Visualize path in each room
+      for (const [roomName, positions] of positionsByRoom) {
+        const viz = new RoomVisual(roomName);
+        // Draw start/end points in this room
+        if (positions[0] === rustPath[0]) {
+          viz.circle(positions[0].x, positions[0].y, {fill: 'red', radius: 0.5});
+        }
+        if (positions[positions.length - 1] === rustPath[rustPath.length - 1]) {
+          viz.circle(positions[positions.length - 1].x, positions[positions.length - 1].y, {fill: 'green', radius: 0.5});
+        }
+        // Draw path segment in this room
+        viz.poly(positions, {stroke: 'blue', strokeWidth: 0.15, opacity: 0.5});
+      }
+
+      // Log performance metrics
+      let weight = 0.1;
+      if (avg_cw_time === 0) {
+        avg_cw_time = rustTime * 0.5;
+      }
+      if (avg_pf_time === 0) {
+        avg_pf_time = pathFinderTime * 0.5;
+      }
+      avg_cw_time = (avg_cw_time * (1 - weight)) + (rustTime * weight);
+      avg_pf_time = (avg_pf_time * (1 - weight)) + (pathFinderTime * weight);
+
+      console.log('Rust path:', rustPath.map(pos => `${pos.x},${pos.y}-${pos.roomName}`).join(','));
+      console.log('PathFinder path:', pathFinderPath!.path.map(pos => `${pos.x},${pos.y}-${pos.roomName}`).join(','));
+      console.log(`Rust PathFinder Time: ${avg_cw_time.toFixed(2)}, this tick: ${rustTime.toFixed(2)}`);
+      console.log('Rust Path Length:', rustPath.length, "rooms opened:", visitedRooms.size);
+      console.log(`PathFinder Time: ${avg_pf_time.toFixed(2)}, this tick: ${pathFinderTime.toFixed(2)}`);
+      console.log('PathFinder Path Length:', pathFinderPath!.path.length, "rooms opened:", pfVisitedRooms.size, "ops:", pathFinderPath!.ops);
     }
   },
   {
