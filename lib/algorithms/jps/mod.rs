@@ -1,5 +1,5 @@
 use screeps::{CircleStyle, Direction, LineStyle, Position, RoomCoordinate, RoomName, RoomVisual, TextAlign, TextStyle, game::cpu};
-use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}, utils::Profiler};
+use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}, utils::PROFILER};
 use super::{astar::cost_cache::CostCache, map::corresponding_room_edge};
 use std::sync::Arc;
 use crate::log;
@@ -10,10 +10,10 @@ pub fn jump(
     direction: Direction,
     jump_cost: u8,
     goals: &[Position],
-    cost_cache: &mut CostCache,
-    profiler: Arc<Profiler>,
+    cost_cache: &mut CostCache
 ) -> Option<Position> {
     let profiling_enabled = false;
+    let profiler = &PROFILER;
 
     let next_pos = current_position.checked_add_direction(direction).ok()?;
     let next_cost = cost_cache.get_cost(next_pos);
@@ -156,8 +156,8 @@ pub fn jump(
         if profiling_enabled {
             profiler.start_call("jump::diagonal_recursive");
         }
-        let jump_up_and_left = jump(next_pos, current_position, dir_up_and_left, jump_cost, goals, cost_cache, profiler.clone());
-        let jump_up_and_right = jump(next_pos, current_position, dir_up_and_right, jump_cost, goals, cost_cache, profiler.clone());
+        let jump_up_and_left = jump(next_pos, current_position, dir_up_and_left, jump_cost, goals, cost_cache);
+        let jump_up_and_right = jump(next_pos, current_position, dir_up_and_right, jump_cost, goals, cost_cache);
         if profiling_enabled {
             profiler.end_call("jump::diagonal_recursive");
         }
@@ -229,7 +229,7 @@ pub fn jump(
         profiler.start_call("jump::recursive");
     }
 
-    let ret = jump(next_pos, first_position, direction, jump_cost, goals, cost_cache, profiler.clone());
+    let ret = jump(next_pos, first_position, direction, jump_cost, goals, cost_cache);
     if profiling_enabled {
         profiler.end_call("jump::recursive");
     }

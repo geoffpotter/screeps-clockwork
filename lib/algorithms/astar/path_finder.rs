@@ -1,4 +1,4 @@
-use screeps::{Position, RoomName, Direction, RoomXY, RoomCoordinate, xy_to_linear_index};
+use screeps::{Position, RoomName, Direction, RoomXY, RoomCoordinate, xy_to_linear_index, game::cpu};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashSet, HashMap};
 use std::convert::TryFrom;
@@ -7,6 +7,7 @@ use serde::{Serialize, Deserialize};
 use js_sys;
 
 use crate::log;
+use crate::utils::PROFILER;
 
 const MAX_ROOMS: usize = 64;
 const OBSTACLE_COST: u32 = u32::MAX;
@@ -47,61 +48,59 @@ struct WorldPosition {
 }
 
 impl WorldPosition {
+    #[inline]
     fn new(xx: u32, yy: u32) -> Self {
         Self { xx, yy }
     }
 
+    #[inline]
     fn null() -> Self {
         Self { xx: 0, yy: 0 }
     }
 
+    #[inline]
     fn is_null(&self) -> bool {
         self.xx == 0 && self.yy == 0
     }
 
+    #[inline]
     fn from_position(pos: Position) -> Self {
         let x = pos.room_name().x_coord();
         let y = pos.room_name().y_coord();
         let base_x = (x + 128) * 50;
         let base_y = (y + 128) * 50;
-        let result = Self {
+        Self {
             xx: (base_x + pos.x().u8() as i32) as u32,
             yy: (base_y + pos.y().u8() as i32) as u32,
-        };
-        // log(&format!("Converting room pos ({}, {}) in room {} to world pos ({}, {})", 
-        //     pos.x().u8(), pos.y().u8(), pos.room_name(), result.xx, result.yy));
-        result
+        }
     }
 
+    #[inline]
     fn to_position(&self) -> Position {
         let room_x = (self.xx / 50) as i32;
         let room_y = (self.yy / 50) as i32;
-        
-        // Convert from our internal coordinate system (0-255) to Screeps coordinates
-        let x = -128 + room_x;  // Convert from 0-255 to -128-127
-        let y = -128 + room_y;  // Convert from 0-255 to -128-127
-
-        // Pack room coordinates into a u16
+        let x = -128 + room_x;
+        let y = -128 + room_y;
         let packed_room = (((x + 128) as u16) << 8) | ((y + 128) as u16);
         let room_name = RoomName::from_packed(packed_room);
         let x_coord = RoomCoordinate::new((self.xx % 50) as u8).unwrap();
         let y_coord = RoomCoordinate::new((self.yy % 50) as u8).unwrap();
-        let pos = Position::new(x_coord, y_coord, room_name);
-        // log(&format!("Converting world pos ({}, {}) to room pos ({}, {}) in room {}", 
-        //     self.xx, self.yy, x_coord.u8(), y_coord.u8(), room_name));
-        pos
+        Position::new(x_coord, y_coord, room_name)
     }
 
+    #[inline]
+    fn range_to(&self, other: WorldPosition) -> u32 {
+        let dx = if other.xx > self.xx { other.xx - self.xx } else { self.xx - other.xx };
+        let dy = if other.yy > self.yy { other.yy - self.yy } else { self.yy - other.yy };
+        dx.max(dy)
+    }
+
+    #[inline]
     fn map_position(&self) -> MapPosition {
         MapPosition::new((self.xx / 50) as u8, (self.yy / 50) as u8)
     }
 
-    fn range_to(&self, other: WorldPosition) -> u32 {
-        let dx = if other.xx > self.xx { other.xx - self.xx } else { self.xx - other.xx };
-        let dy = if other.yy > self.yy { other.yy - self.yy } else { self.yy - other.yy };
-        std::cmp::max(dx, dy)
-    }
-
+    #[inline]
     fn checked_add_direction(&self, dir: Direction) -> Option<WorldPosition> {
         match dir {
             Direction::Top => if self.yy > 0 { Some(WorldPosition::new(self.xx, self.yy - 1)) } else { None },
@@ -153,6 +152,7 @@ impl RoomInfo {
         }
     }
 
+
     fn get_cost(&self, x: u8, y: u8) -> u8 {
         if let Some(ref cost_matrix) = self.cost_matrix {
             let cost = cost_matrix[y as usize * 50 + x as usize];
@@ -172,6 +172,7 @@ pub struct PathFinder {
     reverse_room_table: Vec<RoomIndex>,
     blocked_rooms: HashSet<MapPosition>,
     open_set: BinaryHeap<PathFinderState>,
+    open_nodes: HashMap<PosIndex, Cost>,
     closed_set: HashSet<PosIndex>,
     plain_cost: Cost,
     swamp_cost: Cost,
@@ -181,6 +182,10 @@ pub struct PathFinder {
     flee: bool,
     heuristic_weight: f64,
     debug: bool,
+    goals: Vec<Position>,
+    goal_positions: Vec<WorldPosition>,
+    parents: HashMap<PosIndex, PosIndex>,
+    current_room_info: Option<(MapPosition, &'static RoomInfo)>,
 }
 
 impl PathFinder {
@@ -195,9 +200,10 @@ impl PathFinder {
     ) -> Self {
         Self {
             room_table: Vec::with_capacity(MAX_ROOMS),
-            reverse_room_table: vec![0; 65536], // 2^16 possible room positions
+            reverse_room_table: vec![0; 65536],
             blocked_rooms: HashSet::new(),
             open_set: BinaryHeap::new(),
+            open_nodes: HashMap::new(),
             closed_set: HashSet::new(),
             plain_cost,
             swamp_cost,
@@ -207,6 +213,10 @@ impl PathFinder {
             flee,
             heuristic_weight,
             debug: false,
+            goals: Vec::new(),
+            goal_positions: Vec::new(),
+            parents: HashMap::new(),
+            current_room_info: None,
         }
     }
 
@@ -216,44 +226,47 @@ impl PathFinder {
         }
     }
 
+    #[inline]
     fn get_cost(&self, pos: WorldPosition) -> Cost {
+        // return 1;
         let map_pos = pos.map_position();
         let room_index = self.reverse_room_table[map_pos.id() as usize];
         if room_index == 0 {
-            self.debug_log(&format!("No room data for position {:?}", pos));
             return OBSTACLE_COST;
         }
+        // return 1;
         let room_info = &self.room_table[(room_index - 1) as usize];
         let x = (pos.xx % 50) as u8;
         let y = (pos.yy % 50) as u8;
         let terrain_cost = room_info.get_cost(x, y);
-        let cost = match terrain_cost {
-            0 => self.plain_cost,  // TERRAIN_MASK_PLAIN = 0
-            2 => self.swamp_cost,  // TERRAIN_MASK_SWAMP = 2
-            1 => OBSTACLE_COST,    // TERRAIN_MASK_WALL = 1
+        // Use a lookup table for cost conversion
+        match terrain_cost {
+            0 => self.plain_cost,
+            2 => self.swamp_cost,
             _ => OBSTACLE_COST,
-        };
-        self.debug_log(&format!("Cost for pos {:?}: terrain={}, cost={}", pos, terrain_cost, cost));
-        cost
+        }
     }
 
-    fn heuristic(&self, pos: WorldPosition, goals: &[Position]) -> Cost {
+    #[inline]
+    fn get_room_info(&self, map_pos: MapPosition) -> Option<&RoomInfo> {
+        let room_index = self.reverse_room_table[map_pos.id() as usize];
+        if room_index == 0 {
+            None
+        } else {
+            Some(&self.room_table[(room_index - 1) as usize])
+        }
+    }
+
+    #[inline]
+    fn heuristic(&self, pos: WorldPosition) -> Cost {
         let mut min_cost = Cost::MAX;
-        for goal in goals {
-            let goal_pos = WorldPosition::from_position(*goal);
-            let cost = if self.flee {
-                pos.range_to(goal_pos)  // For flee mode, larger distance is better
-            } else {
-                pos.range_to(goal_pos)
-            };
-            if cost < min_cost {
+        for goal_pos in &self.goal_positions {
+            let cost = pos.range_to(*goal_pos);
+            if (!self.flee && cost < min_cost) || (self.flee && cost > min_cost) {
                 min_cost = cost;
             }
-            self.debug_log(&format!("Distance to goal {:?}: {}", goal_pos, cost));
         }
-        let weighted_cost = (min_cost as f64 * self.heuristic_weight) as Cost;
-        self.debug_log(&format!("Heuristic for pos {:?}: {} (weighted: {})", pos, min_cost, weighted_cost));
-        weighted_cost
+        ((min_cost as f64) * self.heuristic_weight) as Cost
     }
 
     fn index_from_pos(&self, pos: WorldPosition) -> Option<PosIndex> {
@@ -293,19 +306,30 @@ impl PathFinder {
         world_pos
     }
 
-    fn push_node(&mut self, parent_index: PosIndex, node: WorldPosition, g_cost: Cost, goals: &[Position]) {
+    fn push_node(&mut self, parent_index: PosIndex, node: WorldPosition, g_cost: Cost) {
         let node_index = match self.index_from_pos(node) {
             Some(index) => index,
             None => return,
         };
+        // PROFILER.start_call("push_node");
 
         if self.closed_set.contains(&node_index) {
+            // PROFILER.end_call("push_node");
             return;
         }
 
-        let h_cost = self.heuristic(node, goals);
+        let h_cost = self.heuristic(node);
         let f_cost = g_cost + h_cost;
 
+        // Check if node is already in open set with a better score
+        if let Some(&existing_f_cost) = self.open_nodes.get(&node_index) {
+            if existing_f_cost <= f_cost {
+                // PROFILER.end_call("push_node");
+                return;
+            }
+        }
+
+        // Add or update node
         let state = PathFinderState {
             f_score: f_cost,
             g_score: g_cost,
@@ -313,14 +337,26 @@ impl PathFinder {
             parent: Some(parent_index),
         };
 
-        // If node is already in open set, update it if this path is better
-        if let Some(existing_state) = self.open_set.iter().find(|s| s.position == node) {
-            if existing_state.f_score > f_cost {
-                self.open_set.retain(|s| s.position != node);
-                self.open_set.push(state);
+        self.open_nodes.insert(node_index, f_cost);
+        self.open_set.push(state);
+        // PROFILER.end_call("push_node");
+    }
+
+    fn jump_neighbor(&mut self, parent_index: PosIndex, pos: WorldPosition, neighbor: WorldPosition, g_cost: Cost, cost: Cost, n_cost: Cost) {
+        if n_cost != cost || is_border_pos(neighbor.xx) || is_border_pos(neighbor.yy) {
+            if n_cost == OBSTACLE_COST {
+                return;
             }
+            self.push_node(parent_index, neighbor, g_cost + n_cost);
         } else {
-            self.open_set.push(state);
+            let dx = (neighbor.xx as i32 - pos.xx as i32).signum();
+            let dy = (neighbor.yy as i32 - pos.yy as i32).signum();
+            let jump_point = self.jump(n_cost, neighbor, dx, dy);
+            
+            if !jump_point.is_null() {
+                let jump_cost = n_cost * (pos.range_to(jump_point) - 1) + self.get_cost(jump_point);
+                self.push_node(parent_index, jump_point, g_cost + jump_cost);
+            }
         }
     }
 
@@ -334,50 +370,90 @@ impl PathFinder {
     }
 
     pub fn search(&mut self, origin: Position, goals: &[Position]) -> Option<Vec<Position>> {
+        let start_cpu = cpu::get_used();
+        let PROFILING_ENABLED = false;
+        if PROFILING_ENABLED {
+            PROFILER.start_call("init");
+        }
         self.debug_log(&format!("Starting search from {:?} to {:?}", origin, goals));
         let origin_pos = WorldPosition::from_position(origin);
         let origin_index = self.index_from_pos(origin_pos)?;
 
         // Initialize search
         self.open_set.clear();
+        self.open_nodes.clear();
         self.closed_set.clear();
-        self.push_node(origin_index, origin_pos, 0, goals);
+        self.goals.clear();
+        self.goals.extend_from_slice(goals);
+        self.goal_positions.clear();
+        self.goal_positions.extend(goals.iter().map(|&pos| WorldPosition::from_position(pos)));
+        self.parents.clear();
+
+        // Initial A* setup - we need to add all valid neighbors of the origin
+        let origin_cost = self.get_cost(origin_pos);
+        if origin_cost == OBSTACLE_COST {
+            return None;
+        }
+
+        self.expand_astar(origin_pos, origin_index, 0);
 
         let mut ops_remaining = self.max_ops;
         let mut min_node = None;
         let mut min_node_h_cost = Cost::MAX;
         let mut min_node_g_cost = Cost::MAX;
-
-        // Store parent pointers for path reconstruction
-        let mut parent_map = std::collections::HashMap::new();
-
+        let mut total_ops = 0;
+        
+        if PROFILING_ENABLED {
+            PROFILER.end_call("init");
+        }
         // Main search loop
         while let Some(current) = self.open_set.pop() {
+            if PROFILING_ENABLED {
+                PROFILER.start_call("op_init");
+            }
             if ops_remaining == 0 {
                 self.debug_log("Search terminated: out of operations");
+                if PROFILING_ENABLED {
+                    PROFILER.end_call("op_init");
+                }
                 break;
             }
 
             let current_pos = current.position;
             let current_index = self.index_from_pos(current_pos)?;
+
+            // Skip if already closed
+            if self.closed_set.contains(&current_index) {
+                if PROFILING_ENABLED {
+                    PROFILER.end_call("op_init");
+                }
+                continue;
+            }
+
             self.closed_set.insert(current_index);
 
             if let Some(parent) = current.parent {
-                parent_map.insert(current_index, parent);
+                self.parents.insert(current_index, parent);
             }
 
-            let h_cost = self.heuristic(current_pos, goals);
+            if PROFILING_ENABLED {
+                PROFILER.end_call("op_init");
+                PROFILER.start_call("op_score");
+            }
+
+            let h_cost = self.heuristic(current_pos);
             let g_cost = current.g_score;
 
-            self.debug_log(&format!(
-                "Exploring pos: xx={}, yy={}, h_cost={}, g_cost={}, f_cost={}",
-                current_pos.xx, current_pos.yy, h_cost, g_cost, h_cost + g_cost
-            ));
+            self.debug_log(&format!("Exploring node at {:?} with h_cost={}, g_cost={}", current_pos, h_cost, g_cost));
 
             // Check if we've reached a goal
             if h_cost == 0 || (self.flee && h_cost >= 1) {
-                self.debug_log("Found goal!");
                 min_node = Some(current);
+                min_node_h_cost = 0;
+                min_node_g_cost = g_cost;
+                if PROFILING_ENABLED {
+                    PROFILER.end_call("op_score");
+                }
                 break;
             } else if h_cost < min_node_h_cost || (self.flee && h_cost > min_node_h_cost) {
                 min_node = Some(current);
@@ -387,118 +463,370 @@ impl PathFinder {
 
             if g_cost + h_cost > self.max_cost {
                 self.debug_log("Search terminated: exceeded max cost");
+                if PROFILING_ENABLED {
+                    PROFILER.end_call("op_score");
+                }
                 break;
             }
-
-            // Add neighbors
-            let pos = current.position;
-            let index = current_index;
-
-            // Add natural neighbors
-            for dir in &[Direction::Top, Direction::Right, Direction::Bottom, Direction::Left] {
-                if let Some(next) = pos.checked_add_direction(*dir) {
-                    let n_cost = self.get_cost(next);
-                    if n_cost != OBSTACLE_COST {
-                        self.push_node(index, next, g_cost + n_cost, goals);
-                    }
-                }
+            if PROFILING_ENABLED {
+                PROFILER.end_call("op_score");
             }
 
-            // Add diagonal neighbors
-            for dir in &[Direction::TopRight, Direction::BottomRight, Direction::BottomLeft, Direction::TopLeft] {
-                if let Some(next) = pos.checked_add_direction(*dir) {
-                    let n_cost = self.get_cost(next);
-                    if n_cost != OBSTACLE_COST {
-                        self.push_node(index, next, g_cost + n_cost, goals);
-                    }
-                }
+            // Add next neighbors using JPS
+            if PROFILING_ENABLED {
+                PROFILER.start_call("op_expand");
             }
-
+            // self.expand_astar(current_pos, current_index, g_cost);
+            self.jps(current_index, current_pos, g_cost);
             ops_remaining -= 1;
+            total_ops += 1;
+            if PROFILING_ENABLED {
+                PROFILER.end_call("op_expand");
+            }
         }
+        let cpu_used = cpu::get_used() - start_cpu;
+        log(&format!("Search completed with {} total ops, {} CPU used", total_ops, cpu_used));
 
-        self.debug_log(&format!("Search completed with {} operations remaining", ops_remaining));
-        self.debug_log(&format!("Parent map size: {}", parent_map.len()));
-
+        if PROFILING_ENABLED {
+            PROFILER.start_call("path_reconstruction");
+        }
         // Reconstruct path
         if let Some(end_node) = min_node {
-            let mut path = Vec::new();
-            let mut current = end_node;
-            path.push(current.position.to_position());
+            // Pre-allocate path with estimated capacity
+            let mut path = Vec::with_capacity(50);  // Most paths are under 50 steps
+            let mut current_pos = end_node.position;
+            let mut current_index = self.index_from_pos(current_pos)?;
 
-            self.debug_log(&format!(
-                "Starting path reconstruction from xx={}, yy={}",
-                current.position.xx, current.position.yy
-            ));
+            // Add the end position
+            path.push(current_pos.to_position());
 
-            // Keep track of visited positions to avoid cycles
-            let mut visited = HashSet::new();
-            visited.insert(current.position);
-
-            while let Some(parent_index) = current.parent {
+            // Follow parent pointers and interpolate directly
+            while let Some(&parent_index) = self.parents.get(&current_index) {
                 let parent_pos = self.pos_from_index(parent_index);
                 
-                self.debug_log(&format!(
-                    "Found parent at xx={}, yy={}",
-                    parent_pos.xx, parent_pos.yy
-                ));
-
-                // Interpolate path if jump point is more than 1 tile away
-                if current.position.range_to(parent_pos) > 1 {
-                    let mut pos = current.position;
-                    while pos.range_to(parent_pos) > 1 {
-                        let dx = (parent_pos.xx as i32 - pos.xx as i32).signum();
-                        let dy = (parent_pos.yy as i32 - pos.yy as i32).signum();
+                // If points are adjacent, just add the parent
+                if current_pos.range_to(parent_pos) <= 1 {
+                    if parent_pos != origin_pos {
+                        path.push(parent_pos.to_position());
+                    }
+                } else {
+                    // Interpolate between points
+                    let dx = (parent_pos.xx as i32 - current_pos.xx as i32).signum();
+                    let dy = (parent_pos.yy as i32 - current_pos.yy as i32).signum();
+                    let mut pos = current_pos;
+                    
+                    // Calculate number of steps needed
+                    let steps = current_pos.range_to(parent_pos) - 1;
+                    for _ in 0..steps {
                         pos = WorldPosition::new(
                             (pos.xx as i32 + dx) as u32,
-                            (pos.yy as i32 + dy) as u32,
+                            (pos.yy as i32 + dy) as u32
                         );
-                        if !visited.insert(pos) {
-                            self.debug_log("Cycle detected during interpolation");
-                            return Some(path);
-                        }
                         path.push(pos.to_position());
                     }
                 }
 
-                if !visited.insert(parent_pos) {
-                    self.debug_log("Cycle detected at parent");
-                    return Some(path);
-                }
-                path.push(parent_pos.to_position());
-
-                // Look up the next parent from our parent map
-                if let Some(&next_parent) = parent_map.get(&parent_index) {
-                    current = PathFinderState {
-                        position: parent_pos,
-                        parent: Some(next_parent),
-                        f_score: 0,   // Not needed for reconstruction
-                        g_score: 0,   // Not needed for reconstruction
-                    };
-                } else {
-                    self.debug_log("No more parents found in parent map");
+                if parent_pos == origin_pos {
                     break;
                 }
+                current_pos = parent_pos;
+                current_index = parent_index;
             }
-
             path.reverse();
-            self.debug_log(&format!("Final path length: {}", path.len()));
+            if PROFILING_ENABLED {
+                PROFILER.end_call("path_reconstruction");
+            }
+            PROFILER.print_results();
+            let total_cpu = cpu::get_used() - start_cpu;
+            log(&format!("Path found in {} CPU", total_cpu));
             Some(path)
         } else {
-            self.debug_log("No path found");
             None
         }
     }
 
+    fn expand_astar(&mut self, origin_pos: WorldPosition, origin_index: u32, g_cost: Cost) {
+        // Add initial neighbors in all 8 directions
+        for dx in [-1, 0, 1].iter() {
+            for dy in [-1, 0, 1].iter() {
+                if *dx == 0 && *dy == 0 {
+                    continue;
+                }
+                let neighbor = WorldPosition::new(
+                    (origin_pos.xx as i32 + dx) as u32,
+                    (origin_pos.yy as i32 + dy) as u32
+                );
+                let n_cost = self.get_cost(neighbor);
+                if n_cost != OBSTACLE_COST {
+                    self.push_node(origin_index, neighbor, g_cost + n_cost);
+                }
+            }
+        }
+    }
+    
     pub fn set_debug(&mut self, debug: bool) {
         self.debug = debug;
     }
+
+    fn jump_x(&self, cost: Cost, mut pos: WorldPosition, dx: i32) -> WorldPosition {
+        let mut prev_cost_u = self.get_cost(WorldPosition::new(pos.xx, pos.yy.wrapping_sub(1)));
+        let mut prev_cost_d = self.get_cost(WorldPosition::new(pos.xx, pos.yy + 1));
+        
+        loop {
+            if self.heuristic(pos) == 0 || is_near_border_pos(pos.xx) {
+                break;
+            }
+
+            let cost_u = self.get_cost(WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy.wrapping_sub(1)));
+            let cost_d = self.get_cost(WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy + 1));
+            
+            if (cost_u != OBSTACLE_COST && prev_cost_u != cost) ||
+               (cost_d != OBSTACLE_COST && prev_cost_d != cost) {
+                break;
+            }
+            
+            prev_cost_u = cost_u;
+            prev_cost_d = cost_d;
+            pos.xx = (pos.xx as i32 + dx) as u32;
+
+            let jump_cost = self.get_cost(pos);
+            if jump_cost == OBSTACLE_COST {
+                pos = WorldPosition::null();
+                break;
+            } else if jump_cost != cost {
+                break;
+            }
+        }
+        pos
+    }
+
+    fn jump_y(&self, cost: Cost, mut pos: WorldPosition, dy: i32) -> WorldPosition {
+        let mut prev_cost_l = self.get_cost(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy));
+        let mut prev_cost_r = self.get_cost(WorldPosition::new(pos.xx + 1, pos.yy));
+        
+        loop {
+            if self.heuristic(pos) == 0 || is_near_border_pos(pos.yy) {
+                break;
+            }
+
+            let cost_l = self.get_cost(WorldPosition::new(pos.xx.wrapping_sub(1), (pos.yy as i32 + dy) as u32));
+            let cost_r = self.get_cost(WorldPosition::new(pos.xx + 1, (pos.yy as i32 + dy) as u32));
+            
+            if (cost_l != OBSTACLE_COST && prev_cost_l != cost) ||
+               (cost_r != OBSTACLE_COST && prev_cost_r != cost) {
+                break;
+            }
+            
+            prev_cost_l = cost_l;
+            prev_cost_r = cost_r;
+            pos.yy = (pos.yy as i32 + dy) as u32;
+
+            let jump_cost = self.get_cost(pos);
+            if jump_cost == OBSTACLE_COST {
+                pos = WorldPosition::null();
+                break;
+            } else if jump_cost != cost {
+                break;
+            }
+        }
+        pos
+    }
+
+    fn jump_xy(&self, cost: Cost, mut pos: WorldPosition, dx: i32, dy: i32) -> WorldPosition {
+        let mut prev_cost_x = self.get_cost(WorldPosition::new(pos.xx.wrapping_sub(dx as u32), pos.yy));
+        let mut prev_cost_y = self.get_cost(WorldPosition::new(pos.xx, pos.yy.wrapping_sub(dy as u32)));
+        
+        loop {
+            if self.heuristic(pos) == 0 || is_near_border_pos(pos.xx) || is_near_border_pos(pos.yy) {
+                break;
+            }
+
+            if (self.get_cost(WorldPosition::new(pos.xx.wrapping_sub(dx as u32), (pos.yy as i32 + dy) as u32)) != OBSTACLE_COST && prev_cost_x != cost) ||
+               (self.get_cost(WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy.wrapping_sub(dy as u32))) != OBSTACLE_COST && prev_cost_y != cost) {
+                break;
+            }
+
+            prev_cost_x = self.get_cost(WorldPosition::new(pos.xx, (pos.yy as i32 + dy) as u32));
+            prev_cost_y = self.get_cost(WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy));
+            
+            if (prev_cost_y != OBSTACLE_COST && !self.jump_x(cost, WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy), dx).is_null()) ||
+               (prev_cost_x != OBSTACLE_COST && !self.jump_y(cost, WorldPosition::new(pos.xx, (pos.yy as i32 + dy) as u32), dy).is_null()) {
+                break;
+            }
+
+            pos.xx = (pos.xx as i32 + dx) as u32;
+            pos.yy = (pos.yy as i32 + dy) as u32;
+
+            let jump_cost = self.get_cost(pos);
+            if jump_cost == OBSTACLE_COST {
+                pos = WorldPosition::null();
+                break;
+            } else if jump_cost != cost {
+                break;
+            }
+        }
+        pos
+    }
+
+    fn jump(&self, cost: Cost, pos: WorldPosition, dx: i32, dy: i32) -> WorldPosition {
+        if dx != 0 {
+            if dy != 0 {
+                self.jump_xy(cost, pos, dx, dy)
+            } else {
+                self.jump_x(cost, pos, dx)
+            }
+        } else {
+            self.jump_y(cost, pos, dy)
+        }
+    }
+
+    fn jps(&mut self, index: PosIndex, pos: WorldPosition, g_cost: Cost) {
+        let parent = if let Some(&parent_index) = self.parents.get(&index) {
+            self.pos_from_index(parent_index)
+        } else {
+            return;  // No parent found
+        };
+
+        let dx = if pos.xx > parent.xx { 1 } else if pos.xx < parent.xx { -1 } else { 0 };
+        let dy = if pos.yy > parent.yy { 1 } else if pos.yy < parent.yy { -1 } else { 0 };
+
+        // First check to see if we're jumping to/from a border, options are limited in this case
+        let mut neighbors = Vec::with_capacity(3);
+        if pos.xx % 50 == 0 {
+            if dx == -1 {
+                neighbors.push(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy));
+            } else if dx == 1 {
+                neighbors.push(WorldPosition::new(pos.xx + 1, pos.yy.wrapping_sub(1)));
+                neighbors.push(WorldPosition::new(pos.xx + 1, pos.yy));
+                neighbors.push(WorldPosition::new(pos.xx + 1, pos.yy + 1));
+            }
+        } else if pos.xx % 50 == 49 {
+            if dx == 1 {
+                neighbors.push(WorldPosition::new(pos.xx + 1, pos.yy));
+            } else if dx == -1 {
+                neighbors.push(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy.wrapping_sub(1)));
+                neighbors.push(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy));
+                neighbors.push(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy + 1));
+            }
+        } else if pos.yy % 50 == 0 {
+            if dy == -1 {
+                neighbors.push(WorldPosition::new(pos.xx, pos.yy.wrapping_sub(1)));
+            } else if dy == 1 {
+                neighbors.push(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy + 1));
+                neighbors.push(WorldPosition::new(pos.xx, pos.yy + 1));
+                neighbors.push(WorldPosition::new(pos.xx + 1, pos.yy + 1));
+            }
+        } else if pos.yy % 50 == 49 {
+            if dy == 1 {
+                neighbors.push(WorldPosition::new(pos.xx, pos.yy + 1));
+            } else if dy == -1 {
+                neighbors.push(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy.wrapping_sub(1)));
+                neighbors.push(WorldPosition::new(pos.xx, pos.yy.wrapping_sub(1)));
+                neighbors.push(WorldPosition::new(pos.xx + 1, pos.yy.wrapping_sub(1)));
+            }
+        }
+
+        // Add special nodes from the above blocks to the heap
+        if !neighbors.is_empty() {
+            for neighbor in neighbors {
+                let n_cost = self.get_cost(neighbor);
+                if n_cost != OBSTACLE_COST {
+                    self.push_node(index, neighbor, g_cost + n_cost);
+                }
+            }
+            return;
+        }
+
+        // Regular JPS iteration follows
+
+        // First check to see if we're close to borders
+        let border_dx = if pos.xx % 50 == 1 {
+            -1
+        } else if pos.xx % 50 == 48 {
+            1
+        } else {
+            0
+        };
+
+        let border_dy = if pos.yy % 50 == 1 {
+            -1
+        } else if pos.yy % 50 == 48 {
+            1
+        } else {
+            0
+        };
+
+        // Now execute the logic that is shared between diagonal and straight jumps
+        let cost = self.get_cost(pos);
+        if dx != 0 {
+            let neighbor = WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy);
+            let n_cost = self.get_cost(neighbor);
+            if n_cost != OBSTACLE_COST {
+                if border_dy == 0 {
+                    self.jump_neighbor(index, pos, neighbor, g_cost, cost, n_cost);
+                } else {
+                    self.push_node(index, neighbor, g_cost + n_cost);
+                }
+            }
+        }
+        if dy != 0 {
+            let neighbor = WorldPosition::new(pos.xx, (pos.yy as i32 + dy) as u32);
+            let n_cost = self.get_cost(neighbor);
+            if n_cost != OBSTACLE_COST {
+                if border_dx == 0 {
+                    self.jump_neighbor(index, pos, neighbor, g_cost, cost, n_cost);
+                } else {
+                    self.push_node(index, neighbor, g_cost + n_cost);
+                }
+            }
+        }
+
+        // Forced neighbor rules
+        if dx != 0 {
+            if dy != 0 { // Jumping diagonally
+                let neighbor = WorldPosition::new((pos.xx as i32 + dx) as u32, (pos.yy as i32 + dy) as u32);
+                let n_cost = self.get_cost(neighbor);
+                if n_cost != OBSTACLE_COST {
+                    self.jump_neighbor(index, pos, neighbor, g_cost, cost, n_cost);
+                }
+                
+                if self.get_cost(WorldPosition::new(pos.xx.wrapping_sub(dx as u32), pos.yy)) != cost {
+                    let forced = WorldPosition::new(pos.xx.wrapping_sub(dx as u32), (pos.yy as i32 + dy) as u32);
+                    self.jump_neighbor(index, pos, forced, g_cost, cost, self.get_cost(forced));
+                }
+                if self.get_cost(WorldPosition::new(pos.xx, pos.yy.wrapping_sub(dy as u32))) != cost {
+                    let forced = WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy.wrapping_sub(dy as u32));
+                    self.jump_neighbor(index, pos, forced, g_cost, cost, self.get_cost(forced));
+                }
+            } else { // Jumping left / right
+                if border_dy == 1 || self.get_cost(WorldPosition::new(pos.xx, pos.yy + 1)) != cost {
+                    let forced = WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy + 1);
+                    self.jump_neighbor(index, pos, forced, g_cost, cost, self.get_cost(forced));
+                }
+                if border_dy == -1 || self.get_cost(WorldPosition::new(pos.xx, pos.yy.wrapping_sub(1))) != cost {
+                    let forced = WorldPosition::new((pos.xx as i32 + dx) as u32, pos.yy.wrapping_sub(1));
+                    self.jump_neighbor(index, pos, forced, g_cost, cost, self.get_cost(forced));
+                }
+            }
+        } else { // Jumping up / down
+            if border_dx == 1 || self.get_cost(WorldPosition::new(pos.xx + 1, pos.yy)) != cost {
+                let forced = WorldPosition::new(pos.xx + 1, (pos.yy as i32 + dy) as u32);
+                self.jump_neighbor(index, pos, forced, g_cost, cost, self.get_cost(forced));
+            }
+            if border_dx == -1 || self.get_cost(WorldPosition::new(pos.xx.wrapping_sub(1), pos.yy)) != cost {
+                let forced = WorldPosition::new(pos.xx.wrapping_sub(1), (pos.yy as i32 + dy) as u32);
+                self.jump_neighbor(index, pos, forced, g_cost, cost, self.get_cost(forced));
+            }
+        }
+    }
 }
 
+#[inline]
 fn is_border_pos(val: u32) -> bool {
     (val + 1) % 50 < 2
 }
 
+#[inline]
 fn is_near_border_pos(val: u32) -> bool {
     (val + 2) % 50 < 4
 }

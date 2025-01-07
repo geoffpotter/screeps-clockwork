@@ -1,7 +1,7 @@
 use screeps::{LocalCostMatrix, LocalRoomTerrain, Position, RoomName, RoomTerrain, Terrain};
 use wasm_bindgen::{prelude::*, throw_str};
 
-use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}, utils::Profiler};
+use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}};
 
 #[wasm_bindgen]
 pub fn get_terrain_cost_matrix(

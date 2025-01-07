@@ -2,17 +2,16 @@
 use std::sync::Arc;
 use screeps::{Position, RoomName};
 use crate::datatypes::{ClockworkCostMatrix, OptionalCache};
-use crate::utils::Profiler;
+use crate::utils::PROFILER;
 
 pub struct CostCache<'a> {
     current_room_cost_matrix: Option<ClockworkCostMatrix>,
     current_matrix_room: Option<RoomName>,
     cost_matrices: OptionalCache<'a, RoomName, ClockworkCostMatrix>,
-    profiler: Arc<Profiler>,
 }
 
 impl<'a> CostCache<'a> {
-    pub fn new<F>(get_cost_matrix: F, profiler: Arc<Profiler>) -> Self 
+    pub fn new<F>(get_cost_matrix: F) -> Self 
     where 
         F: Fn(RoomName) -> Option<ClockworkCostMatrix> + 'a
     {
@@ -22,12 +21,11 @@ impl<'a> CostCache<'a> {
             current_room_cost_matrix: None,
             current_matrix_room: None,
             cost_matrices,
-            profiler,
         }
     }
     #[inline(always)]
     pub fn get_cost(&mut self, position: Position) -> u8 {
-        // self.profiler.start_call("get_cost");
+        PROFILER.start_call("get_cost");
         let room_name = position.room_name();
 
         // Fast path: same room
@@ -36,7 +34,7 @@ impl<'a> CostCache<'a> {
                 .as_ref()
                 .unwrap()
                 .get(position.xy());
-            // self.profiler.end_call("get_cost");
+            PROFILER.end_call("get_cost");
             return result
         }
 
@@ -50,11 +48,11 @@ impl<'a> CostCache<'a> {
                     .as_ref()
                     .unwrap()
                     .get(position.xy());
-                // self.profiler.end_call("get_cost");
+                PROFILER.end_call("get_cost");
                 result
             }
             None => {
-                // self.profiler.end_call("get_cost");
+                PROFILER.end_call("get_cost");
                 255
             }
         }

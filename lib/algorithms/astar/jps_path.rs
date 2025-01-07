@@ -5,7 +5,7 @@ use crate::datatypes::ClockworkCostMatrix;
 use crate::datatypes::MultiroomDistanceMap;
 use crate::datatypes::OptionalCache;
 use crate::log;
-use crate::utils::{set_panic_hook, Profiler, JPS_PROFILER};
+use crate::utils::{set_panic_hook, PROFILER};
 use crate::algorithms::astar::cost_cache::CostCache;
 use lazy_static::lazy_static;
 use screeps::CircleStyle;
@@ -145,7 +145,7 @@ pub fn jps_multiroom_distance_map(
     goals: Vec<Position>,
 ) -> MultiroomDistanceMap {
     set_panic_hook();
-    let profiler = JPS_PROFILER.clone();
+    let profiler = &PROFILER;
 
     // Turn this on to see visuals in-game:
     const ENABLE_VISUALIZATION: bool = true;
@@ -158,7 +158,7 @@ pub fn jps_multiroom_distance_map(
 
     let mut frontier = BinaryHeap::new();
     let mut multiroom_distance_map = MultiroomDistanceMap::new();
-    let mut cost_cache = CostCache::new(get_cost_matrix, profiler.clone());
+    let mut cost_cache = CostCache::new(get_cost_matrix);
     let mut metrics = PathfindingMetrics::new();
 
     let start_room = start[0].room_name();
@@ -285,7 +285,7 @@ pub fn jps_multiroom_distance_map(
                 profiler.start_call("jump");
             }
             if let Some(neighbor) =
-                jump(position, first_step, *direction, first_step_cost, goals.as_slice(), &mut cost_cache, profiler.clone())
+                jump(position, first_step, *direction, first_step_cost, goals.as_slice(), &mut cost_cache)
             {
                 if profiling_enabled {
                     profiler.end_call("jump");

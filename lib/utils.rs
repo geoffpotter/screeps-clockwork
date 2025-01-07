@@ -16,7 +16,8 @@ use crate::log;
 use lazy_static::lazy_static;
 
 lazy_static! {
-    pub static ref JPS_PROFILER: Arc<Profiler> = Arc::new(Profiler::new());
+    // pub static ref JPS_PROFILER: Arc<Profiler> = Arc::new(Profiler::new());
+    pub static ref PROFILER: Profiler = Profiler::new();
 }
 
 pub struct Profiler {
