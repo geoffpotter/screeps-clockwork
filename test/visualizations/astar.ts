@@ -6,7 +6,7 @@ import {
   ephemeral,
   jpsDistanceMap,
   jpsPath,
-  RustPathFinder
+  rust_pathfinder
 } from '../../src/index';
 
 
@@ -291,23 +291,27 @@ export default [
       let to = targetFlag.pos;
       const iterations = 1;
 
-      // Initialize Rust pathfinder
-      const rustPathFinder = new RustPathFinder(
-        1,  // plain cost
-        5,  // swamp cost
-        16, // max rooms
-        10000, // max operations
-        1500000, // max cost
-        false, // flee mode
-        1.2  // heuristic weight
-      );
+      // // Initialize Rust pathfinder
+      // const rustPathFinder = new RustPathFinder(
+      //   1,  // plain cost
+      //   5,  // swamp cost
+      //   16, // max rooms
+      //   10000, // max operations
+      //   1500000, // max cost
+      //   false, // flee mode
+      //   1.2  // heuristic weight
+      // );
 
       let rustPath: RoomPosition[] = [];
       const visitedRooms = new Set<string>();
       const rustTime = cpuTime(() => {
-        rustPath = rustPathFinder.search(
+        rustPath = rust_pathfinder(
           from,
           [to]
+        ) || [];
+        // rustPath = rustPathFinder.search(
+        //   from,
+        //   [to]
           // (roomName: string) => {
           //   if (Game.map.getRoomStatus(roomName).status !== "normal") {
           //     return null;
@@ -325,7 +329,7 @@ export default [
           //     cost_matrix: null
           //   };
           // }
-        ) || [];
+        // ) || [];
       }, iterations);
 
       // Compare with built-in PathFinder
@@ -418,7 +422,16 @@ export default [
       const targetRoom = targetFlag.pos.roomName;
       const terrain = Game.map.getRoomTerrain(targetRoom);
       const viz = new RoomVisual(targetRoom);
-      // viz.circle(originFlag.pos.x, originFlag.pos.y, {fill: 'blue', radius: 0.3, opacity: 1});
+      // Initialize Rust pathfinder
+      // const rustPathFinder = new RustPathFinder(
+      //   1,  // plain cost
+      //   5,  // swamp cost
+      //   100, // max rooms
+      //   10000, // max operations
+      //   1500000, // max cost
+      //   false, // flee mode
+      //   1.0  // heuristic weight
+      // );
 
       // Initialize queue if not already done
       if (!this.initialized) {
@@ -466,10 +479,14 @@ export default [
         try {
           // Measure Clockwork results
           clockworkTime = cpuTime(() => {
-            rustPathFinder.search(
+            rust_pathfinder(
                 from,
                 [to]
               )
+            // rustPathFinder.search(
+            //     from,
+            //     [to]
+            //   )
           }, iterations);
         } catch (e) {
           console.log('Error at position', pos.x, pos.y, e);

@@ -24,7 +24,7 @@ export * from './wrappers/monoFlowField';
 export * from './wrappers/multiroomFlowField';
 export * from './wrappers/multiroomMonoFlowField';
 export * from './wrappers/path';
-export { RustPathFinder } from './wrappers/rustPathFinder';
+export * from './wrappers/rustPathFinder';
 
 declare namespace WebAssembly {
   class Module {
