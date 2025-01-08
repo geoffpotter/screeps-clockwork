@@ -154,7 +154,7 @@ export default [
       const targetRoom = targetFlag.pos.roomName;
       const terrain = Game.map.getRoomTerrain(targetRoom);
       const viz = new RoomVisual(targetRoom);
-
+      viz.circle(originFlag.pos.x, originFlag.pos.y, {fill: 'blue', radius: 0.3, opacity: 1});
 
       // Initialize queue if not already done
       if (!this.initialized) {
@@ -165,7 +165,7 @@ export default [
         // Add all walkable positions to queue
         for (let y = 0; y < 50; y++) {
           for (let x = 0; x < 50; x++) {
-            if (terrain.get(x, y) !== TERRAIN_MASK_WALL) {
+            if (terrain.get(x, y) !== TERRAIN_MASK_WALL && !(originFlag.pos.x === x && originFlag.pos.y === y)) {
               this.positionQueue.push({x, y});
             }
           }
