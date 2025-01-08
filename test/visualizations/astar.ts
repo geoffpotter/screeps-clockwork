@@ -307,25 +307,24 @@ export default [
       const rustTime = cpuTime(() => {
         rustPath = rustPathFinder.search(
           from,
-          [to],
-          (roomName: string) => {
-            visitedRooms.add(roomName);
-            if (Game.map.getRoomStatus(roomName).status !== "normal") {
-              return null;
-            }
-            const terrain = Game.map.getRoomTerrain(roomName);
-            const terrainData = new Uint8Array(2500);
-            for (let y = 0; y < 50; y++) {
-              for (let x = 0; x < 50; x++) {
-                const idx = y * 50 + x;
-                terrainData[idx] = terrain.get(x, y);
-              }
-            }
-            return {
-              terrain: terrainData,
-              cost_matrix: null // Using default terrain costs for now
-            };
-          }
+          [to]
+          // (roomName: string) => {
+          //   if (Game.map.getRoomStatus(roomName).status !== "normal") {
+          //     return null;
+          //   }
+          //   const terrain = Game.map.getRoomTerrain(roomName);
+          //   const terrainData = new Uint8Array(2500);
+          //   for (let y = 0; y < 50; y++) {
+          //     for (let x = 0; x < 50; x++) {
+          //       const idx = y * 50 + x;
+          //       terrainData[idx] = terrain.get(x, y);
+          //     }
+          //   }
+          //   return {
+          //     terrain: terrainData,
+          //     cost_matrix: null
+          //   };
+          // }
         ) || [];
       }, iterations);
 

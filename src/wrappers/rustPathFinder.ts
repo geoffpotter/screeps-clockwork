@@ -1,8 +1,7 @@
-import { JsPathFinder } from "../wasm/screeps_clockwork";
-
+import { fromPacked } from '../utils/fromPacked';
+import { js_pathfinder } from '../wasm/screeps_clockwork';
 
 export class RustPathFinder {
-  private pathFinder: JsPathFinder;
 
   constructor(
     plainCost: number,
@@ -13,26 +12,28 @@ export class RustPathFinder {
     flee: boolean,
     heuristicWeight: number
   ) {
-    this.pathFinder = new JsPathFinder(
-      plainCost,
-      swampCost,
-      maxRooms,
-      maxOps,
-      maxCost,
-      flee,
-      heuristicWeight
-    );
   }
 
   setDebug(debug: boolean): void {
-    this.pathFinder.set_debug(debug);
   }
 
   search(
     origin: RoomPosition,
-    goals: RoomPosition[],
-    roomCallback: (roomName: string) => { terrain: Uint8Array; cost_matrix?: Uint8Array | null } | null
+    goals: RoomPosition[]
   ): RoomPosition[] | null {
-    return this.pathFinder.search(origin, goals, roomCallback) || null;
+    if (!goals?.length) {
+      throw new Error('At least one destination must be set');
+    }
+  
+    const startPacked = origin.__packedPos;
+    const destinationsPacked = new Uint32Array(goals.map(pos => pos.__packedPos));
+    const result = js_pathfinder(startPacked, destinationsPacked);
+  
+    const path = [];
+    for (const pos of result) {
+      path.push(fromPacked(pos));
+    }
+  
+    return path;
   }
 } 

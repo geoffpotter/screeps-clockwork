@@ -1,5 +1,7 @@
+
 use crate::algorithms::astar::metrics::PathfindingMetrics;
 use crate::algorithms::jps::jump;
+use crate::algorithms::jps::WorldPosition;
 use crate::algorithms::map::corresponding_room_edge;
 use crate::datatypes::ClockworkCostMatrix;
 use crate::datatypes::MultiroomDistanceMap;
@@ -148,7 +150,7 @@ pub fn jps_multiroom_distance_map(
     let profiler = &PROFILER;
 
     // Turn this on to see visuals in-game:
-    const ENABLE_VISUALIZATION: bool = true;
+    const ENABLE_VISUALIZATION: bool = false;
 
     // Whether or not to profile sub-steps
     let profiling_enabled = false;
@@ -158,7 +160,7 @@ pub fn jps_multiroom_distance_map(
 
     let mut frontier = BinaryHeap::new();
     let mut multiroom_distance_map = MultiroomDistanceMap::new();
-    let mut cost_cache = CostCache::new(get_cost_matrix);
+    let cost_cache = CostCache::get_instance();
     let mut metrics = PathfindingMetrics::new();
 
     let start_room = start[0].room_name();
@@ -261,6 +263,7 @@ pub fn jps_multiroom_distance_map(
                     if profiling_enabled {
                         profiler.end_call("direction_processing");
                     }
+                    log(&format!("failed direction_processing: {:?}", direction));
                     continue;
                 }
             };
@@ -270,7 +273,7 @@ pub fn jps_multiroom_distance_map(
                 current_room_distance_map = multiroom_distance_map.get_or_create_room_map(current_room);
             }
 
-            let first_step_cost = cost_cache.get_cost(first_step);
+            let first_step_cost = cost_cache.look(WorldPosition::from(first_step));
             if first_step_cost >= 255 
                 || current_room_distance_map[first_step.xy()] <= g_score.saturating_add(first_step_cost as usize) 
                 {
@@ -278,6 +281,7 @@ pub fn jps_multiroom_distance_map(
                 if profiling_enabled {
                     profiler.end_call("direction_processing");
                 }
+                // log(&format!("impassable: {:?}, cost: {}, existing cost: {}, g_score: {}", direction, first_step_cost, current_room_distance_map[first_step.xy()], g_score));
                 continue;
             }
 
@@ -285,7 +289,7 @@ pub fn jps_multiroom_distance_map(
                 profiler.start_call("jump");
             }
             if let Some(neighbor) =
-                jump(position, first_step, *direction, first_step_cost, goals.as_slice(), &mut cost_cache)
+                jump(position, first_step, *direction, first_step_cost, goals.as_slice())
             {
                 if profiling_enabled {
                     profiler.end_call("jump");
@@ -334,13 +338,15 @@ pub fn jps_multiroom_distance_map(
                 }
                 if profiling_enabled {
                     profiler.end_call("path_interpolation");
+                    profiler.start_call("add_to_frontier");
                 }
 
                 let jump_range = position.get_range_to(neighbor);
                 metrics.max_jump_distance = metrics.max_jump_distance.max(jump_range as usize);
-                let terrain_cost = cost_cache.get_cost(neighbor);
+                let terrain_cost = cost_cache.look(WorldPosition::from(neighbor));
                 if terrain_cost >= 255 {
                     if profiling_enabled {
+                        profiler.end_call("add_to_frontier");
                         profiler.end_call("jump handling");
                         profiler.end_call("direction_processing");
                     }
@@ -351,6 +357,7 @@ pub fn jps_multiroom_distance_map(
 
                 if current_room_distance_map[neighbor.xy()] <= next_cost {
                     if profiling_enabled {
+                        profiler.end_call("add_to_frontier");
                         profiler.end_call("jump handling");
                         profiler.end_call("direction_processing");
                     }
@@ -378,9 +385,8 @@ pub fn jps_multiroom_distance_map(
                 }
 
                 // We push neighbor into the frontier => considered "open"
-                if profiling_enabled {
-                    profiler.start_call("add_to_frontier");
-                }
+                // if profiling_enabled {
+                // }
 
                 
                 let h_score = heuristic(neighbor, goals.as_slice());
@@ -425,10 +431,10 @@ pub fn jps_multiroom_distance_map(
                 current_room_distance_map[neighbor.xy()] = next_cost;
                 if profiling_enabled {
                     profiler.end_call("add_to_frontier");
+                    profiler.end_call("jump handling");
                 }
             }
             if profiling_enabled {
-                profiler.end_call("jump handling");
                 profiler.end_call("direction_processing");
             }
         }
