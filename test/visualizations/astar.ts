@@ -444,7 +444,7 @@ export default [
       // Process positions until we hit CPU limit or queue is empty
       const startCpu = Game.cpu.getUsed();
       const cpuLimit = 100; // CPU limit per tick
-      let iterations = 3;
+      let iterations = 10;
       while (this.positionQueue.length > 0 && (Game.cpu.getUsed() - startCpu) < cpuLimit) {
         const pos = this.positionQueue.pop()!;
         const to = new RoomPosition(pos.x, pos.y, targetRoom);
@@ -466,23 +466,11 @@ export default [
         try {
           // Measure Clockwork results
           clockworkTime = cpuTime(() => {
-            const distanceMap = ephemeral(
-              astarMultiroomDistanceMap([from], {
-                costMatrixCallback: getTerrainCostMatrix,
-                maxOps: 10000,
-                anyOfDestinations: [to]
-              })
-            );
-            if (distanceMap) {
-              // console.log('Clockwork ops', result.ops);
-              clockworkResult = {
-                path: distanceMap.pathToOrigin(to),
-                ops: 0,
-                cost: 0,
-                incomplete: false
-              };
-            }
-          }, iterations) / iterations;
+            rustPathFinder.search(
+                from,
+                [to]
+              )
+          }, iterations);
         } catch (e) {
           console.log('Error at position', pos.x, pos.y, e);
         }
