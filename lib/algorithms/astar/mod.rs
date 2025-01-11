@@ -4,3 +4,4 @@ pub mod metrics;
 pub mod cost_cache;
 pub mod multiroom_distance_map;
 pub mod path_finder;
+pub mod jasper_star;

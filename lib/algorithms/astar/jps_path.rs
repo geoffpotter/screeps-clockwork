@@ -31,35 +31,34 @@ use std::sync::Arc;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct State {
-    f_score: usize,
     g_score: usize,
     position: Position,
     open_direction: Option<Direction>,
 }
 
-impl Ord for State {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // if time() % 2 == 0 {
-        //     // old:
-            // other.f_score.cmp(&self.f_score)
-        // } else {
-            // new:
-            let f_score_cmp = other.f_score.cmp(&self.f_score);
-            if f_score_cmp == Ordering::Equal {
-                // self.g_score.cmp(&other.g_score).reverse()
-                self.g_score.cmp(&other.g_score)
-            } else {
-                f_score_cmp
-            }
-        // }
-    }
-}
+// impl Ord for State {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         // if time() % 2 == 0 {
+//         //     // old:
+//             // other.f_score.cmp(&self.f_score)
+//         // } else {
+//             // new:
+//             let f_score_cmp = other.f_score.cmp(&self.f_score);
+//             if f_score_cmp == Ordering::Equal {
+//                 // self.g_score.cmp(&other.g_score).reverse()
+//                 self.g_score.cmp(&other.g_score)
+//             } else {
+//                 f_score_cmp
+//             }
+//         // }
+//     }
+// }
 
-impl PartialOrd for State {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
+// impl PartialOrd for State {
+//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+//         Some(self.cmp(other))
+//     }
+// }
 
 fn heuristic(position: Position, goal: &[Position]) -> usize {
     goal.iter()
@@ -158,7 +157,8 @@ pub fn jps_multiroom_distance_map(
         profiler.start_call("jps_multiroom_distance_map");
     }
 
-    let mut frontier = BinaryHeap::new();
+    let mut open: Vec<Vec<State>> = vec![Default::default()];
+    let mut min_idx = 0;
     let mut multiroom_distance_map = MultiroomDistanceMap::new();
     let cost_cache = CostCache::get_instance();
     let mut metrics = PathfindingMetrics::new();
@@ -180,8 +180,7 @@ pub fn jps_multiroom_distance_map(
             );
         }
 
-        frontier.push(State {
-            f_score: 0,
+        open[0].push(State {
             g_score: 0,
             position,
             open_direction: None,
@@ -195,253 +194,256 @@ pub fn jps_multiroom_distance_map(
     let mut current_room = start_room;
     let mut current_room_distance_map = multiroom_distance_map.get_or_create_room_map(current_room);
 
-    while let Some(State {
-        f_score,
-        g_score,
-        position,
-        open_direction,
-    }) = frontier.pop()
-    {
-        if profiling_enabled {
-            profiler.start_call("Close Node");
-        }
-
-        
-
-        // Once we pop from frontier, this node is "closed":
-        if ENABLE_VISUALIZATION {
-            // Draw a black circle to indicate a closed node
-            let viz = RoomVisual::new(Some(position.room_name()));
-            viz.circle(
-                position.x().u8() as f32,
-                position.y().u8() as f32,
-                Some(CircleStyle::default().fill("#000000").opacity(0.5).radius(0.3)),
-            );
-        }
-
-        metrics.nodes_visited += 1;
-
-        if metrics.nodes_visited >= max_ops {
+    while min_idx < open.len() {
+        while let Some(State {
+            g_score,
+            position,
+            open_direction,
+        }) = open[min_idx].pop()
+        {
             if profiling_enabled {
-                profiler.end_call("Close Node");
-            }
-            unsafe {
-                log(&format!("{:?}", metrics));
-            }
-            if profiling_enabled {
-                profiler.end_call("jps_multiroom_distance_map");
-                profiler.print_results();
-            }
-            return multiroom_distance_map;
-        }
-
-        // If we reached any goal, stop
-        if goals.iter().any(|g| g == &position) {
-            if profiling_enabled {
-                profiler.end_call("Close Node");
-            }
-            unsafe {
-                log(&format!("{:?}", metrics));
-            }
-            if profiling_enabled {
-                profiler.end_call("jps_multiroom_distance_map");
-                profiler.print_results();
-            }
-            return multiroom_distance_map;
-        }
-
-        // We try all useful directions from here
-        for direction in next_directions(open_direction) {
-            if profiling_enabled {
-                profiler.start_call("direction_processing");
+                profiler.start_call("Close Node");
             }
 
-            metrics.neighbor_checks += 1;
-            let first_step = match position.checked_add_direction(*direction) {
-                Ok(pos) => pos,
-                Err(_) => {
+            
+
+            // Once we pop from frontier, this node is "closed":
+            if ENABLE_VISUALIZATION {
+                // Draw a black circle to indicate a closed node
+                let viz = RoomVisual::new(Some(position.room_name()));
+                viz.circle(
+                    position.x().u8() as f32,
+                    position.y().u8() as f32,
+                    Some(CircleStyle::default().fill("#000000").opacity(0.5).radius(0.3)),
+                );
+            }
+
+            metrics.nodes_visited += 1;
+
+            if metrics.nodes_visited >= max_ops {
+                if profiling_enabled {
+                    profiler.end_call("Close Node");
+                }
+                unsafe {
+                    log(&format!("{:?}", metrics));
+                }
+                if profiling_enabled {
+                    profiler.end_call("jps_multiroom_distance_map");
+                    profiler.print_results();
+                }
+                return multiroom_distance_map;
+            }
+
+            // If we reached any goal, stop
+            if goals.iter().any(|g| g == &position) {
+                if profiling_enabled {
+                    profiler.end_call("Close Node");
+                }
+                unsafe {
+                    log(&format!("{:?}", metrics));
+                }
+                if profiling_enabled {
+                    profiler.end_call("jps_multiroom_distance_map");
+                    profiler.print_results();
+                }
+                return multiroom_distance_map;
+            }
+
+            // We try all useful directions from here
+            for direction in next_directions(open_direction) {
+                if profiling_enabled {
+                    profiler.start_call("direction_processing");
+                }
+
+                metrics.neighbor_checks += 1;
+                let first_step = match position.checked_add_direction(*direction) {
+                    Ok(pos) => pos,
+                    Err(_) => {
+                        if profiling_enabled {
+                            profiler.end_call("direction_processing");
+                        }
+                        log(&format!("failed direction_processing: {:?}", direction));
+                        continue;
+                    }
+                };
+
+                if first_step.room_name() != current_room {
+                    current_room = first_step.room_name();
+                    current_room_distance_map = multiroom_distance_map.get_or_create_room_map(current_room);
+                }
+
+                let first_step_cost = cost_cache.look(WorldPosition::from(first_step));
+                if first_step_cost >= 255 
+                    || current_room_distance_map[first_step.xy()] <= g_score.saturating_add(first_step_cost as usize) 
+                    {
+                    // Impassable
                     if profiling_enabled {
                         profiler.end_call("direction_processing");
                     }
-                    log(&format!("failed direction_processing: {:?}", direction));
+                    // log(&format!("impassable: {:?}, cost: {}, existing cost: {}, g_score: {}", direction, first_step_cost, current_room_distance_map[first_step.xy()], g_score));
                     continue;
                 }
-            };
 
-            if first_step.room_name() != current_room {
-                current_room = first_step.room_name();
-                current_room_distance_map = multiroom_distance_map.get_or_create_room_map(current_room);
-            }
-
-            let first_step_cost = cost_cache.look(WorldPosition::from(first_step));
-            if first_step_cost >= 255 
-                || current_room_distance_map[first_step.xy()] <= g_score.saturating_add(first_step_cost as usize) 
+                if profiling_enabled {
+                    profiler.start_call("jump");
+                }
+                if let Some(neighbor) =
+                    jump(position, first_step, *direction, first_step_cost, goals.as_slice())
                 {
-                // Impassable
+                    if profiling_enabled {
+                        profiler.end_call("jump");
+                        profiler.start_call("jump handling");
+                    }
+                    // If jump returns same position, skip
+                    if neighbor.is_equal_to(position) {
+                        if profiling_enabled {
+                            profiler.end_call("jump handling");
+                            profiler.end_call("direction_processing");
+                        }
+                        continue;
+                    }
+
+                    metrics.jump_attempts += 1;
+
+                    // Visualize the jump line if you want
+                    if ENABLE_VISUALIZATION {
+                        let viz = RoomVisual::new(Some(position.room_name()));
+                        viz.line(
+                            (position.x().u8() as f32, position.y().u8() as f32),
+                            (neighbor.x().u8() as f32, neighbor.y().u8() as f32),
+                            Some(LineStyle::default().color("#ff0000").width(0.05)),
+                        );
+                    }
+
+                    // Interpolate along the path to neighbor
+                    if profiling_enabled {
+                        profiler.start_call("path_interpolation");
+                    }
+                    let mut step = position;
+                    let mut jump_cost = g_score;
+                    while let Ok(next_step) = step.checked_add_direction(*direction) {
+                        if next_step.room_name() != current_room {
+                            current_room = next_step.room_name();
+                            current_room_distance_map =
+                                multiroom_distance_map.get_or_create_room_map(current_room);
+                        }
+                        if next_step == neighbor {
+                            break;
+                        }
+                        jump_cost = jump_cost.saturating_add(first_step_cost as usize);
+                        current_room_distance_map[next_step.xy()] =
+                            jump_cost.min(current_room_distance_map[next_step.xy()]);
+                        step = next_step;
+                    }
+                    if profiling_enabled {
+                        profiler.end_call("path_interpolation");
+                        profiler.start_call("add_to_frontier");
+                    }
+
+                    let jump_range = position.get_range_to(neighbor);
+                    metrics.max_jump_distance = metrics.max_jump_distance.max(jump_range as usize);
+                    let terrain_cost = cost_cache.look(WorldPosition::from(neighbor));
+                    if terrain_cost >= 255 {
+                        if profiling_enabled {
+                            profiler.end_call("add_to_frontier");
+                            profiler.end_call("jump handling");
+                            profiler.end_call("direction_processing");
+                        }
+                        continue;
+                    }
+
+                    let next_cost = jump_cost.saturating_add(terrain_cost as usize);
+
+                    if current_room_distance_map[neighbor.xy()] <= next_cost {
+                        if profiling_enabled {
+                            profiler.end_call("add_to_frontier");
+                            profiler.end_call("jump handling");
+                            profiler.end_call("direction_processing");
+                        }
+                        if ENABLE_VISUALIZATION {
+                            let viz = RoomVisual::new(Some(position.room_name()));
+                            viz.circle(
+                                neighbor.x().u8() as f32,
+                                neighbor.y().u8() as f32,
+                                Some(CircleStyle::default().stroke("red").fill("transparent").opacity(0.5).radius(0.4)),
+                            );
+                        }
+                        continue;
+                    } else if current_room_distance_map[neighbor.xy()] < usize::MAX {
+                        // log(&format!("neighbor: {:?} new cost: {} old cost: {}", neighbor, next_cost, current_room_distance_map[neighbor.xy()]));
+                        // remove the old state from frontier
+                        // frontier.retain(|state| !state.position.is_equal_to(neighbor));
+                        if ENABLE_VISUALIZATION {
+                            let viz = RoomVisual::new(Some(position.room_name()));
+                            viz.circle(
+                                neighbor.x().u8() as f32,
+                                neighbor.y().u8() as f32,
+                                Some(CircleStyle::default().stroke("green").fill("transparent").opacity(0.5).radius(0.4)),
+                            );
+                        }
+                    }
+
+                    // We push neighbor into the frontier => considered "open"
+                    // if profiling_enabled {
+                    // }
+
+                    
+                    let h_score = heuristic(neighbor, goals.as_slice());
+                    let f_score = next_cost.saturating_add(h_score);
+
+
+                    if ENABLE_VISUALIZATION {
+                        let viz = RoomVisual::new(Some(position.room_name()));
+                        viz.circle(
+                            neighbor.x().u8() as f32,
+                            neighbor.y().u8() as f32,
+                            Some(CircleStyle::default().stroke("#ffffff").opacity(0.5).radius(0.3)),
+                        );
+                        // Place G bottom-left, H bottom-right, F top-right
+                        let offset = 0.4;
+                        viz.text(
+                            neighbor.x().u8() as f32 - offset,
+                            neighbor.y().u8() as f32 + offset,
+                            format!("G:{}", next_cost),
+                            Some(TextStyle::default().font(0.175).align(TextAlign::Left).background_padding(0.1)),
+                        );
+                        // viz.text(
+                        //     neighbor.x().u8() as f32 + offset,
+                        //     neighbor.y().u8() as f32 + offset,
+                        //     format!(" H:{}", h_score),
+                        //     Some(TextStyle::default().font(0.175).align(TextAlign::Right).background_padding(0.1)),
+                        // );
+                        viz.text(
+                            neighbor.x().u8() as f32 + offset,
+                            neighbor.y().u8() as f32 - offset,
+                            format!(" F:{}", f_score),
+                            Some(TextStyle::default().font(0.175).align(TextAlign::Right).background_padding(0.1)),
+                        );
+                    }
+                    while open.len() <= f_score {
+                        open.push(Default::default());
+                    }
+                    open[f_score].push(State {
+                        g_score: next_cost,
+                        position: neighbor,
+                        open_direction: position.get_direction_to(neighbor),
+                    });
+                    current_room_distance_map[neighbor.xy()] = next_cost;
+                    if profiling_enabled {
+                        profiler.end_call("add_to_frontier");
+                        profiler.end_call("jump handling");
+                    }
+                }
                 if profiling_enabled {
                     profiler.end_call("direction_processing");
                 }
-                // log(&format!("impassable: {:?}, cost: {}, existing cost: {}, g_score: {}", direction, first_step_cost, current_room_distance_map[first_step.xy()], g_score));
-                continue;
             }
 
             if profiling_enabled {
-                profiler.start_call("jump");
-            }
-            if let Some(neighbor) =
-                jump(position, first_step, *direction, first_step_cost, goals.as_slice())
-            {
-                if profiling_enabled {
-                    profiler.end_call("jump");
-                    profiler.start_call("jump handling");
-                }
-                // If jump returns same position, skip
-                if neighbor.is_equal_to(position) {
-                    if profiling_enabled {
-                        profiler.end_call("jump handling");
-                        profiler.end_call("direction_processing");
-                    }
-                    continue;
-                }
-
-                metrics.jump_attempts += 1;
-
-                // Visualize the jump line if you want
-                if ENABLE_VISUALIZATION {
-                    let viz = RoomVisual::new(Some(position.room_name()));
-                    viz.line(
-                        (position.x().u8() as f32, position.y().u8() as f32),
-                        (neighbor.x().u8() as f32, neighbor.y().u8() as f32),
-                        Some(LineStyle::default().color("#ff0000").width(0.05)),
-                    );
-                }
-
-                // Interpolate along the path to neighbor
-                if profiling_enabled {
-                    profiler.start_call("path_interpolation");
-                }
-                let mut step = position;
-                let mut jump_cost = g_score;
-                while let Ok(next_step) = step.checked_add_direction(*direction) {
-                    if next_step.room_name() != current_room {
-                        current_room = next_step.room_name();
-                        current_room_distance_map =
-                            multiroom_distance_map.get_or_create_room_map(current_room);
-                    }
-                    if next_step == neighbor {
-                        break;
-                    }
-                    jump_cost = jump_cost.saturating_add(first_step_cost as usize);
-                    current_room_distance_map[next_step.xy()] =
-                        jump_cost.min(current_room_distance_map[next_step.xy()]);
-                    step = next_step;
-                }
-                if profiling_enabled {
-                    profiler.end_call("path_interpolation");
-                    profiler.start_call("add_to_frontier");
-                }
-
-                let jump_range = position.get_range_to(neighbor);
-                metrics.max_jump_distance = metrics.max_jump_distance.max(jump_range as usize);
-                let terrain_cost = cost_cache.look(WorldPosition::from(neighbor));
-                if terrain_cost >= 255 {
-                    if profiling_enabled {
-                        profiler.end_call("add_to_frontier");
-                        profiler.end_call("jump handling");
-                        profiler.end_call("direction_processing");
-                    }
-                    continue;
-                }
-
-                let next_cost = jump_cost.saturating_add(terrain_cost as usize);
-
-                if current_room_distance_map[neighbor.xy()] <= next_cost {
-                    if profiling_enabled {
-                        profiler.end_call("add_to_frontier");
-                        profiler.end_call("jump handling");
-                        profiler.end_call("direction_processing");
-                    }
-                    if ENABLE_VISUALIZATION {
-                        let viz = RoomVisual::new(Some(position.room_name()));
-                        viz.circle(
-                            neighbor.x().u8() as f32,
-                            neighbor.y().u8() as f32,
-                            Some(CircleStyle::default().stroke("red").fill("transparent").opacity(0.5).radius(0.4)),
-                        );
-                    }
-                    continue;
-                } else if current_room_distance_map[neighbor.xy()] < usize::MAX {
-                    // log(&format!("neighbor: {:?} new cost: {} old cost: {}", neighbor, next_cost, current_room_distance_map[neighbor.xy()]));
-                    // remove the old state from frontier
-                    frontier.retain(|state| !state.position.is_equal_to(neighbor));
-                    if ENABLE_VISUALIZATION {
-                        let viz = RoomVisual::new(Some(position.room_name()));
-                        viz.circle(
-                            neighbor.x().u8() as f32,
-                            neighbor.y().u8() as f32,
-                            Some(CircleStyle::default().stroke("green").fill("transparent").opacity(0.5).radius(0.4)),
-                        );
-                    }
-                }
-
-                // We push neighbor into the frontier => considered "open"
-                // if profiling_enabled {
-                // }
-
-                
-                let h_score = heuristic(neighbor, goals.as_slice());
-                let f_score = next_cost.saturating_add(h_score);
-
-
-                if ENABLE_VISUALIZATION {
-                    let viz = RoomVisual::new(Some(position.room_name()));
-                    viz.circle(
-                        neighbor.x().u8() as f32,
-                        neighbor.y().u8() as f32,
-                        Some(CircleStyle::default().stroke("#ffffff").opacity(0.5).radius(0.3)),
-                    );
-                    // Place G bottom-left, H bottom-right, F top-right
-                    let offset = 0.4;
-                    viz.text(
-                        neighbor.x().u8() as f32 - offset,
-                        neighbor.y().u8() as f32 + offset,
-                        format!("G:{}", next_cost),
-                        Some(TextStyle::default().font(0.175).align(TextAlign::Left).background_padding(0.1)),
-                    );
-                    // viz.text(
-                    //     neighbor.x().u8() as f32 + offset,
-                    //     neighbor.y().u8() as f32 + offset,
-                    //     format!(" H:{}", h_score),
-                    //     Some(TextStyle::default().font(0.175).align(TextAlign::Right).background_padding(0.1)),
-                    // );
-                    viz.text(
-                        neighbor.x().u8() as f32 + offset,
-                        neighbor.y().u8() as f32 - offset,
-                        format!(" F:{}", f_score),
-                        Some(TextStyle::default().font(0.175).align(TextAlign::Right).background_padding(0.1)),
-                    );
-                }
-
-                frontier.push(State {
-                    f_score,
-                    g_score: next_cost,
-                    position: neighbor,
-                    open_direction: position.get_direction_to(neighbor),
-                });
-                current_room_distance_map[neighbor.xy()] = next_cost;
-                if profiling_enabled {
-                    profiler.end_call("add_to_frontier");
-                    profiler.end_call("jump handling");
-                }
-            }
-            if profiling_enabled {
-                profiler.end_call("direction_processing");
+                profiler.end_call("Close Node");
             }
         }
-
-        if profiling_enabled {
-            profiler.end_call("Close Node");
-        }
+        min_idx += 1;
     }
 
     // No more frontier...

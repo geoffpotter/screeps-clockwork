@@ -25,6 +25,9 @@ export * from './wrappers/multiroomFlowField';
 export * from './wrappers/multiroomMonoFlowField';
 export * from './wrappers/path';
 export * from './wrappers/rustPathFinder';
+export { rust_pathfinder } from './wrappers/rustPathFinder';
+export { jasper_star } from './wrappers/jasperStar';
+export type { PathfinderResult } from './wrappers/rustPathFinder';
 
 declare namespace WebAssembly {
   class Module {

@@ -7,16 +7,19 @@ mod types;
 pub use room::RoomInfo;
 pub use goal::{Goal, PathfindingOptions};
 pub use pathfinder::PathFinder;
-use screeps::{game, Position};
+use screeps::{game, Position, Direction, RoomCoordinate, RoomName, LocalCostMatrix, RoomXY, RoomTerrain, LocalRoomTerrain, Terrain};
 pub use types::*;
 use wasm_bindgen::{prelude::wasm_bindgen, throw_str};
 
 use crate::log;
 
-use screeps::{CircleStyle, Direction, LineStyle, RoomCoordinate, RoomName, RoomVisual, TextAlign, TextStyle, game::cpu};
+use screeps::{CircleStyle, LineStyle, RoomVisual, TextAlign, TextStyle};
 use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}, utils::PROFILER};
-use super::{astar::cost_cache::{self, CostCache}, map::corresponding_room_edge};
+use super::astar::cost_cache::CostCache;
+use super::map::corresponding_room_edge;
 use std::{borrow::Borrow, sync::Arc};
+
+const ROOM_AREA: usize = 2500;
 
 pub fn jump(
     current_position: Position,
@@ -291,20 +294,63 @@ pub fn js_pathfinder(origin: u32, goals: Vec<u32>) -> Vec<u32> {
             heuristic_weight: 1.0,
         };
         let result = pf.search(WorldPosition::from(origin), goals, options);
-        log(&format!("Rust Pathfinder search: {}", game::cpu::get_used() - start).to_string());
+        // log(&format!("Rust Pathfinder search: {}", game::cpu::get_used() - start).to_string());
         if let Ok(result) = result {
-            log(&format!("Rust Pathfinder ops: {}", result.ops).to_string());
-            log(&format!("Rust Pathfinder cost: {}", result.cost).to_string());
-            log(&format!("Rust Pathfinder length: {}", result.path.len()).to_string());
-            log(&format!("Rust Pathfinder incomplete: {}", result.incomplete).to_string());
-            return result
-                .path
-                .into_iter()
-                .map(|p| Position::from(p).packed_repr())
-                .collect();
+            // log(&format!("Rust Pathfinder ops: {}", result.ops).to_string());
+            // log(&format!("Rust Pathfinder cost: {}", result.cost).to_string());
+            // log(&format!("Rust Pathfinder length: {}", result.path.len()).to_string());
+            // log(&format!("Rust Pathfinder incomplete: {}", result.incomplete).to_string());
+            
+            // Pack metadata at start of vector: [ops, cost, incomplete, ...path]
+            let mut packed = Vec::with_capacity(result.path.len() + 3);
+            packed.push(result.ops);
+            packed.push(result.cost);
+            packed.push(if result.incomplete { 1 } else { 0 });
+            
+            // Add path positions
+            packed.extend(result.path.into_iter().map(|p| Position::from(p).packed_repr()));
+            
+            return packed;
         } else if let Err(e) = result {
             throw_str(e);
         }
         vec![]
     })
+}
+
+#[wasm_bindgen]
+pub fn js_jasper_star(origin: u32, goals: Vec<u32>, range: u8, plain_cost: u8, swamp_cost: u8, max_ops: usize) -> Vec<u32> {
+
+    let origin = Position::from_packed(origin);
+    let target = Position::from_packed(goals[0]); // For now just use first goal
+    
+    let result = super::astar::jasper_star::find_path(
+        origin,
+        target,
+        range,
+        |room_name| {
+            let terrain = RoomTerrain::new(room_name);
+            if terrain.is_none() {
+                return None;
+            }
+            Some(super::astar::jasper_star::TileMap::new([0u8; ROOM_AREA]))
+        },
+        plain_cost,
+        swamp_cost,
+        max_ops
+    );
+
+    if let Some(path) = result {
+        // Pack metadata at start of vector: [ops, cost, incomplete, ...path]
+        let mut packed = Vec::with_capacity(path.len() + 3);
+        packed.push(0); // ops - not tracked in jasper_star yet
+        packed.push(0); // cost - not tracked in jasper_star yet
+        packed.push(0); // incomplete - not tracked in jasper_star yet
+        
+        // Add path positions
+        packed.extend(path.into_iter().map(|p| p.packed_repr()));
+        
+        return packed;
+    }
+    vec![]
 }

@@ -1,5 +1,5 @@
 import { fromPacked } from '../utils/fromPacked';
-import { js_pathfinder } from '../wasm/screeps_clockwork';
+import { js_jasper_star } from '../wasm/screeps_clockwork';
 
 export type PathfinderResult = {
   readonly path: RoomPosition[];
@@ -8,7 +8,7 @@ export type PathfinderResult = {
   readonly incomplete: boolean;
 };
 
-export function rust_pathfinder(
+export function jasper_star(
   origin: RoomPosition,
   goals: RoomPosition[]
 ): PathfinderResult | null {
@@ -18,7 +18,7 @@ export function rust_pathfinder(
 
   const startPacked = origin.__packedPos;
   const destinationsPacked = new Uint32Array(goals.map(pos => pos.__packedPos));
-  const result = js_pathfinder(startPacked, destinationsPacked);
+  const result = js_jasper_star(startPacked, destinationsPacked, 0, 1, 5, 10000);
 
   if (!result.length) {
     return null;

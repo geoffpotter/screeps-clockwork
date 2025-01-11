@@ -6,7 +6,9 @@ import {
   ephemeral,
   jpsDistanceMap,
   jpsPath,
-  rust_pathfinder
+  rust_pathfinder,
+  PathfinderResult,
+  jasper_star
 } from '../../src/index';
 
 import { cpuTime } from '../utils/cpuTime';
@@ -171,109 +173,109 @@ export default [
       }
     }
   },
-  // {
-  //   name: 'JPS Path',
-  //   color1: COLOR_YELLOW,
-  //   color2: COLOR_GREEN,
-  //   /**
-  //    * Visualization of a JPS path.
-  //    */
-  //   run(rooms) {
-  //     const [originFlag, targetFlag, ...rest] = Object.values(rooms).reduce((acc, flags) => [...acc, ...flags], []);
-  //     if (!originFlag || !targetFlag) {
-  //       return;
-  //     }
-  //     let from = originFlag.pos;
-  //     let to = targetFlag.pos;
-  //     const iterations = 1;
+  {
+    name: 'JPS Path',
+    color1: COLOR_YELLOW,
+    color2: COLOR_GREEN,
+    /**
+     * Visualization of a JPS path.
+     */
+    run(rooms) {
+      const [originFlag, targetFlag, ...rest] = Object.values(rooms).reduce((acc, flags) => [...acc, ...flags], []);
+      if (!originFlag || !targetFlag) {
+        return;
+      }
+      let from = originFlag.pos;
+      let to = targetFlag.pos;
+      const iterations = 1;
 
-  //     let pathFinderPath: PathFinderPath;
-  //     const visitedRooms = new Set<string>();
-  //     const pathFinderTime = cpuTime(() => {
-  //       pathFinderPath = PathFinder.search(to, {pos: from, range: 0}, {
-  //         maxCost: 1500,
-  //         maxOps: 10000,
-  //         roomCallback: roomName => {
-  //           visitedRooms.add(roomName);
-  //           return new PathFinder.CostMatrix();
-  //         },
-  //         heuristicWeight: 1
-  //       });
-  //     }, iterations);
+      let pathFinderPath: PathFinderPath;
+      const visitedRooms = new Set<string>();
+      const pathFinderTime = cpuTime(() => {
+        pathFinderPath = PathFinder.search(to, {pos: from, range: 0}, {
+          maxCost: 1500,
+          maxOps: 10000,
+          roomCallback: roomName => {
+            visitedRooms.add(roomName);
+            return new PathFinder.CostMatrix();
+          },
+          heuristicWeight: 1
+        });
+      }, iterations);
   
 
-  //     visualizePath(pathFinderPath!.path, "red");
-  //     cache.clear();
-  //     let clockworkPath: ClockworkPath;
-  //     // ephemeral(
-  //     //   jpsPath([from], [to], {
-  //     //     costMatrixCallback: roomName => {
-  //     //       if (cache.has(roomName)) {
-  //     //         return cache.get(roomName);
-  //     //       }
-  //     //       const costMatrix = ephemeral(getTerrainCostMatrix(roomName));
-  //     //       cache.set(roomName, costMatrix);
-  //     //       return costMatrix;
-  //     //     }
-  //     //   })
-  //     // );
+      visualizePath(pathFinderPath!.path, "red");
+      cache.clear();
+      let clockworkPath: ClockworkPath;
+      // ephemeral(
+      //   jpsPath([from], [to], {
+      //     costMatrixCallback: roomName => {
+      //       if (cache.has(roomName)) {
+      //         return cache.get(roomName);
+      //       }
+      //       const costMatrix = ephemeral(getTerrainCostMatrix(roomName));
+      //       cache.set(roomName, costMatrix);
+      //       return costMatrix;
+      //     }
+      //   })
+      // );
       
-  //     const clockworkTime = cpuTime(() => {
-  //       clockworkPath = ephemeral(
-  //         jpsPath([from], [to], {
-  //           maxOps: Game.time % 20 + 10000,
+      const clockworkTime = cpuTime(() => {
+        clockworkPath = ephemeral(
+          jpsPath([from], [to], {
+            maxOps: Game.time % 20 + 10000,
             
-  //           // maxOps: 10000,
-  //           costMatrixCallback: roomName => {
-  //             // let startCpu = Game.cpu.getUsed();
-  //             if (Game.map.getRoomStatus(roomName).status != "normal") {
-  //               console.log('Room not normal', roomName);
-  //               return;
-  //             }
-  //             if (cache.has(roomName)) {
-  //               // console.log('Cache hit', roomName);
-  //               // let endCpu = Game.cpu.getUsed();
-  //               // console.log('CM Cpu time', endCpu - startCpu);
-  //               return cache.get(roomName);
-  //             }
-  //             // console.log('Cache miss', roomName);
-  //             const costMatrix = ephemeral(getTerrainCostMatrix(roomName, { plainCost: 1, swampCost: 5, wallCost: 255 }));
-  //             // let endCpu = Game.cpu.getUsed();
-  //             // console.log('CM Cpu time', endCpu - startCpu);
-  //             cache.set(roomName, costMatrix);
-  //             return costMatrix;
-  //           }
-  //         })
-  //       );
-  //     }, iterations);
+            // maxOps: 10000,
+            costMatrixCallback: roomName => {
+              // let startCpu = Game.cpu.getUsed();
+              if (Game.map.getRoomStatus(roomName).status != "normal") {
+                console.log('Room not normal', roomName);
+                return;
+              }
+              if (cache.has(roomName)) {
+                // console.log('Cache hit', roomName);
+                // let endCpu = Game.cpu.getUsed();
+                // console.log('CM Cpu time', endCpu - startCpu);
+                return cache.get(roomName);
+              }
+              // console.log('Cache miss', roomName);
+              const costMatrix = ephemeral(getTerrainCostMatrix(roomName, { plainCost: 1, swampCost: 5, wallCost: 255 }));
+              // let endCpu = Game.cpu.getUsed();
+              // console.log('CM Cpu time', endCpu - startCpu);
+              cache.set(roomName, costMatrix);
+              return costMatrix;
+            }
+          })
+        );
+      }, iterations);
   
 
-  //     let weight = 0.1;
-  //     if (avg_cw_time === 0) {
-  //       avg_cw_time = clockworkTime * 0.5;
-  //     }
-  //     if (avg_pf_time === 0) {
-  //       avg_pf_time = pathFinderTime * 0.5;
-  //     }
-  //     avg_cw_time = (avg_cw_time * (1 - weight)) + (clockworkTime * weight);
-  //     avg_pf_time = (avg_pf_time * (1 - weight)) + (pathFinderTime * weight);
-  //     console.log(`Clockwork Time: ${avg_cw_time.toFixed(2)}, this tick: ${clockworkTime.toFixed(2)}`);
-  //     console.log('Clockwork Path', clockworkPath!.length, "rooms opened", cache.size);
-  //     console.log(`PathFinder Time: ${avg_pf_time.toFixed(2)}, this tick: ${pathFinderTime.toFixed(2)}`);
-  //     console.log('PathFinder Path', pathFinderPath!.path.length, "rooms opened", visitedRooms.size, "ops", pathFinderPath!.ops);
+      let weight = 0.1;
+      if (avg_cw_time === 0) {
+        avg_cw_time = clockworkTime * 0.5;
+      }
+      if (avg_pf_time === 0) {
+        avg_pf_time = pathFinderTime * 0.5;
+      }
+      avg_cw_time = (avg_cw_time * (1 - weight)) + (clockworkTime * weight);
+      avg_pf_time = (avg_pf_time * (1 - weight)) + (pathFinderTime * weight);
+      console.log(`Clockwork Time: ${avg_cw_time.toFixed(2)}, this tick: ${clockworkTime.toFixed(2)}`);
+      console.log('Clockwork Path', clockworkPath!.length, "rooms opened", cache.size);
+      console.log(`PathFinder Time: ${avg_pf_time.toFixed(2)}, this tick: ${pathFinderTime.toFixed(2)}`);
+      console.log('PathFinder Path', pathFinderPath!.path.length, "rooms opened", visitedRooms.size, "ops", pathFinderPath!.ops);
 
 
-  //     // const path = ephemeral(
-  //     //   jpsPath([originFlag.pos], [targetFlag.pos], {
-  //     //     costMatrixCallback: getTerrainCostMatrix,
-  //     //     maxOps: 10000
-  //     //   })
-  //     // );
-  //     // const pathArray = path.toArray();
-  //     let pathArray = clockworkPath!.toArray();
-  //     visualizePath(pathArray);
-  //   }
-  // },
+      // const path = ephemeral(
+      //   jpsPath([originFlag.pos], [targetFlag.pos], {
+      //     costMatrixCallback: getTerrainCostMatrix,
+      //     maxOps: 10000
+      //   })
+      // );
+      // const pathArray = path.toArray();
+      let pathArray = clockworkPath!.toArray();
+      visualizePath(pathArray);
+    }
+  },
   {
     name: 'Rust PathFinder',
     color1: COLOR_YELLOW,
@@ -302,12 +304,16 @@ export default [
       // );
 
       let rustPath: RoomPosition[] = [];
+      let rustResult: PathfinderResult | null = null;
       const visitedRooms = new Set<string>();
       const rustTime = cpuTime(() => {
-        rustPath = rust_pathfinder(
+        rustResult = rust_pathfinder(
           from,
           [to]
-        ) || [];
+        );
+        if (rustResult) {
+          rustPath = rustResult.path;
+        }
         // rustPath = rustPathFinder.search(
         //   from,
         //   [to]
@@ -335,7 +341,7 @@ export default [
       let pathFinderPath: PathFinderPath;
       const pfVisitedRooms = new Set<string>();
       const pathFinderTime = cpuTime(() => {
-        pathFinderPath = PathFinder.search(to, {pos: from, range: 0}, {
+        pathFinderPath = PathFinder.search(from, {pos: to, range: 0}, {
           maxCost: 1500,
           maxOps: 10000,
           roomCallback: roomName => {
@@ -384,12 +390,13 @@ export default [
       avg_cw_time = (avg_cw_time * (1 - weight)) + (rustTime * weight);
       avg_pf_time = (avg_pf_time * (1 - weight)) + (pathFinderTime * weight);
 
-      console.log('Rust path:', rustPath.map(pos => `${pos.x},${pos.y}-${pos.roomName}`).join(','));
-      console.log('PathFinder path:', pathFinderPath!.path.map(pos => `${pos.x},${pos.y}-${pos.roomName}`).join(','));
-      console.log(`Rust PathFinder Time: ${avg_cw_time.toFixed(2)}, this tick: ${rustTime.toFixed(2)}`);
+      // console.log('Rust path:', rustPath.map(pos => `${pos.x},${pos.y}-${pos.roomName}`).join(','));
+      // console.log('PathFinder path:', pathFinderPath!.path.map(pos => `${pos.x},${pos.y}-${pos.roomName}`).join(','));
+      // @ts-ignore
+      console.log(`Rust PathFinder Time: ${avg_cw_time.toFixed(2)}, this tick: ${rustTime.toFixed(2)} ops: ${rustResult?.ops}, cost: ${rustResult?.cost}, incomplete: ${rustResult?.incomplete}`);
       console.log('Rust Path Length:', rustPath.length, "rooms opened:", visitedRooms.size);
       console.log(`PathFinder Time: ${avg_pf_time.toFixed(2)}, this tick: ${pathFinderTime.toFixed(2)}`);
-      console.log('PathFinder Path Length:', pathFinderPath!.path.length, "rooms opened:", pfVisitedRooms.size, "ops:", pathFinderPath!.ops);
+      console.log('PathFinder Path Length:', pathFinderPath!.path.length, "rooms opened:", pfVisitedRooms.size, "ops:", pathFinderPath!.ops, "cost:", pathFinderPath!.cost, "incomplete:", pathFinderPath!.incomplete);
     }
   },
   {
@@ -421,7 +428,7 @@ export default [
       const targetRoom = targetFlag.pos.roomName;
       const terrain = Game.map.getRoomTerrain(targetRoom);
       const viz = new RoomVisual(targetRoom);
-      viz.circle(originFlag.pos.x, originFlag.pos.y, {fill: 'blue', radius: 0.3, opacity: 1});
+      // viz.circle(originFlag.pos.x, originFlag.pos.y, {fill: 'blue', radius: 0.3, opacity: 1});
 
       // Initialize queue if not already done
       if (!this.initialized) {
@@ -447,7 +454,7 @@ export default [
       // Process positions until we hit CPU limit or queue is empty
       const startCpu = Game.cpu.getUsed();
       const cpuLimit = 100; // CPU limit per tick
-      let iterations = 10;
+      let iterations = 3;
       while (this.positionQueue.length > 0 && (Game.cpu.getUsed() - startCpu) < cpuLimit) {
         const pos = this.positionQueue.pop()!;
         const to = new RoomPosition(pos.x, pos.y, targetRoom);
@@ -469,8 +476,20 @@ export default [
         try {
           // Measure Clockwork results
           clockworkTime = cpuTime(() => {
-            rust_pathfinder(originFlag.pos, [targetFlag.pos])
-          }, 1);
+            const result = jpsPath([from], [to], {
+              costMatrixCallback: getTerrainCostMatrix,
+              maxOps: 10000
+            });
+            if (result) {
+              // console.log('Clockwork ops', result.ops);
+              clockworkResult = {
+                path: result.toArray(),
+                ops: 0,
+                cost: 0,
+                incomplete: false
+              };
+            }
+          }, iterations) / iterations;
         } catch (e) {
           console.log('Error at position', pos.x, pos.y, e);
         }
