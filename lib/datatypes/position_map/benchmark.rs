@@ -14,38 +14,42 @@ const IMPLEMENTATIONS: &[(&str, bool)] = &[
     ("MultiroomDistMap", true),  // Always keep this one enabled
 
     // massive memory usage
-    ("GlobalArrayMap", true),
-    ("ZOrderGlobalMap", true),
+    // ("GlobalArrayMap", true),
+    // ("ZOrderGlobalMap", true),
 
     // very slow
-    ("RleZOrderMap", true),
-    ("CachedRunLengthMap", true),
-    ("RunLengthDeltaMap", true),
+    // ("RleZOrderMap", true),
+    // ("CachedRunLengthMap", true),
+    // ("RunLengthDeltaMap", true),
 
 
     // pretty slow
-    ("HashGridMap", true),
-    ("ChunkedZOrderMap", true),
-    ("QuadtreeMap", true),
-    ("SparseBlockMap", true),
-    ("PrefixTreeMap", true),
+    // ("HashGridMap", true),
+    // ("ChunkedZOrderMap", true),
+    // ("QuadtreeMap", true),
+    // ("SparseBlockMap", true),
+    // ("PrefixTreeMap", true),
+    // ("DenseHashMap", true),
 
-    ("HierarchGridMap", true),
-    ("RoomArrayMap", true),
-    ("VectorArrayMap", true),
-    ("Array4DMap", true),
-    ("FlatArrayMap", true),
-    ("DenseHashMap", true),
+    // middlin
+    // ("HierarchGridMap", true),
+    // ("RoomArrayMap", true),
+    // ("FlatArrayMap", true),
+    // ("SimpleHashMap", true),
+
+    // good memeory
+    ("CachedSparseBlock", true), // ?
     ("BitPackedMap", true),
+    // fast and ok memory
+    ("VectorArrayMap", true),
     ("CachedMultiroomMap", true),
     ("CachedRoomArrayMap", true),
-    ("CachedSparseBlock", true),
-    ("SimpleHashMap", true),
+    ("Array4DMap", true),
 ];
 
 const MIN_POINTS: usize = 1;
-const MAX_POINTS: usize = 10_000;
-const NUM_TEST_POINTS: usize = 25;
+const MAX_POINTS: usize = 100_000;
+const NUM_TEST_POINTS: usize = 1000;
 
 #[cfg(test)]
 mod tests {
@@ -93,20 +97,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn benchmark_single_room() {
-        run_benchmark_for_size(0, "Single Room (1x1 rooms)");
-    }
+    // #[test]
+    // fn benchmark_single_room() {
+    //     run_benchmark_for_size(0, "Single Room (1x1 rooms)");
+    // }
 
-    #[test]
-    fn benchmark_small() {
-        run_benchmark_for_size(1, "Small (3x3 rooms)");
-    }
+    // #[test]
+    // fn benchmark_small() {
+    //     run_benchmark_for_size(1, "Small (3x3 rooms)");
+    // }
 
-    #[test]
-    fn benchmark_medium() {
-        run_benchmark_for_size(3, "Medium (7x7 rooms)");
-    }
+    // #[test]
+    // fn benchmark_medium() {
+    //     run_benchmark_for_size(3, "Medium (7x7 rooms)");
+    // }
 
     #[test]
     fn benchmark_large() {
