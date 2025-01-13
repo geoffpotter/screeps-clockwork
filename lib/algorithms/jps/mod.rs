@@ -35,7 +35,15 @@ pub fn jump(
     let cost_cache = CostCache::get_instance();
     let next_pos = current_position.checked_add_direction(direction).ok()?;
     let next_cost = cost_cache.look(WorldPosition::from(next_pos));
-    if next_cost >= 255 {
+    // log(&format!("next_cost: {}", next_cost));
+    if next_cost == OBSTACLE {
+        let viz = RoomVisual::new(Some(next_pos.room_name()));
+        viz.circle(
+            next_pos.x().u8() as f32,
+            next_pos.y().u8() as f32,
+            Some(CircleStyle::default().stroke("#ff0000").fill("transparent").opacity(0.5).radius(0.4)),
+        );
+        // log(&format!("impassable: {:?}, cost: {}, jump cost: {}", direction, next_cost, jump_cost));
         return None;
     }
 
@@ -195,12 +203,12 @@ pub fn jump(
         // Cardinal movement - check for forced neighbors
         let left = current_position
             .checked_add_direction(direction.multi_rot(-2))
-            .map(corresponding_room_edge)
+            // .map(corresponding_room_edge)
             .map(WorldPosition::from)
             .ok()?;
         let right = current_position
             .checked_add_direction(direction.multi_rot(2))
-            .map(corresponding_room_edge)
+            // .map(corresponding_room_edge)
             .map(WorldPosition::from)
             .ok()?;
 
@@ -209,12 +217,12 @@ pub fn jump(
 
         let left_and_up = current_position
             .checked_add_direction(direction.multi_rot(-1))
-            .map(corresponding_room_edge)
+            // .map(corresponding_room_edge)
             .map(WorldPosition::from)
             .ok()?;
         let right_and_up = current_position
             .checked_add_direction(direction.multi_rot(1))
-            .map(corresponding_room_edge)
+            // .map(corresponding_room_edge)
             .map(WorldPosition::from)
             .ok()?;
         let left_and_up_cost = cost_cache.look(left_and_up);
@@ -224,12 +232,12 @@ pub fn jump(
         if next_pos.is_equal_to(first_position) {
             let left_and_back = current_position
                 .checked_add_direction(direction.multi_rot(-3))
-                .map(corresponding_room_edge)
+                // .map(corresponding_room_edge)
                 .map(WorldPosition::from)
                 .ok()?;
             let right_and_back = current_position
                 .checked_add_direction(direction.multi_rot(3))
-                .map(corresponding_room_edge)
+                // .map(corresponding_room_edge)
                 .map(WorldPosition::from)
                 .ok()?;
             let left_and_back_cost = cost_cache.look(left_and_back);
@@ -242,7 +250,7 @@ pub fn jump(
             }
         }
 
-        if (left_and_up_cost < 255 && !(left_and_up_cost > left_cost)) ||
+        if (left_and_up_cost < 255 && !(left_and_up_cost >= left_cost)) ||
            (right_and_up_cost < 255 && !(right_and_up_cost >= right_cost))
         {
             if profiling_enabled {

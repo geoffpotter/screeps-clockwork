@@ -54,6 +54,12 @@ impl MultiroomDistanceMap {
     pub fn rooms(&self) -> Vec<RoomName> {
         self.maps.keys().cloned().collect()
     }
+
+    pub fn memory_usage(&self) -> usize {
+        let mut total = std::mem::size_of::<Self>();
+        total += self.maps.len() * std::mem::size_of::<DistanceMap>();
+        total
+    }
 }
 
 #[wasm_bindgen]

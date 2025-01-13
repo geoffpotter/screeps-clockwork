@@ -1,0 +1,100 @@
+Benchmark Results - Single Room (1x1 rooms)
+
+=== Spiral Pattern Test ===
+Points: 500, Room Transitions: 0
+Position Generation: 0.09ms (0.170µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.000      0.11      0.222   +0.0%      0.10      0.200   +0.0%    19.6KB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+GlobalArrayMap       2090.318      0.02      0.047  -79.0%      0.01      0.016  -92.0%     2.0GB
+VectorArrayMap          0.000      0.03      0.062  -72.3%      0.02      0.044  -77.9%    19.6KB
+CachedMultiroomMap      0.000      0.03      0.054  -75.8%      0.02      0.044  -77.8%    19.6KB
+CachedSparseBlock       0.000      0.04      0.074  -66.7%      0.02      0.046  -76.9%      392B
+CachedRoomArrayMap      0.000      0.03      0.053  -76.3%      0.03      0.051  -74.3%    19.6KB
+CachedRunLengthMap      0.000      9.63     19.258 +8561.7%      0.03      0.051  -74.2%    12.1KB
+Array4DMap              0.000      0.05      0.098  -55.8%      0.03      0.065  -67.4%     9.2KB
+ZOrderGlobalMap      2069.005      0.08      0.162  -27.0%      0.06      0.122  -38.8%     2.0GB
+
+SimpleHashMap           0.000      0.11      0.222   -0.1%      0.10      0.207   +3.5%    19.6KB
+RoomArrayMap            0.000      0.12      0.239   +7.7%      0.10      0.209   +4.4%    19.6KB
+FlatArrayMap            0.000      0.11      0.222   -0.4%      0.10      0.209   +4.5%    19.6KB
+BitPackedMap            0.000      0.08      0.160  -28.0%      0.11      0.211   +5.5%     2.5KB
+HierarchGridMap         0.000      0.11      0.226   +1.9%      0.11      0.217   +8.8%      304B
+DenseHashMap            0.000      0.11      0.228   +2.4%      0.11      0.221  +10.5%    19.6KB
+ChunkedZOrderMap        0.000      0.16      0.321  +44.2%      0.14      0.278  +39.4%       72B
+HashGridMap             0.000      0.25      0.500 +124.9%      0.15      0.298  +49.1%    51.6KB
+PrefixTreeMap           0.000      0.23      0.451 +102.8%      0.16      0.326  +63.3%    32.7KB
+QuadtreeMap             0.000      0.18      0.360  +61.9%      0.17      0.348  +73.9%     7.3KB
+SparseBlockMap          0.000      0.39      0.771 +246.6%      0.22      0.437 +118.9%    11.9KB
+RleZOrderMap            0.000      2.59      5.175 +2227.5%      0.69      1.370 +585.7%    12.0KB
+RunLengthDeltaMap       0.000      2.58      5.170 +2225.1%      0.70      1.405 +602.9%    12.1KB
+
+
+=== Zigzag Room Transitions Test ===
+Points: 500, Room Transitions: 0
+Position Generation: 0.87ms (1.744µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.000      0.11      0.222   +0.0%      0.10      0.202   +0.0%    19.6KB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+GlobalArrayMap       1949.131      0.03      0.069  -69.1%      0.01      0.016  -92.0%     2.0GB
+CachedMultiroomMap      0.000      0.03      0.053  -75.9%      0.02      0.045  -77.9%    19.6KB
+VectorArrayMap          0.000      0.03      0.064  -71.4%      0.02      0.045  -77.5%    19.6KB
+CachedRoomArrayMap      0.000      0.03      0.055  -75.3%      0.03      0.053  -73.9%    19.6KB
+CachedRunLengthMap      0.000      9.26     18.525 +8242.4%      0.03      0.053  -73.6%    12.1KB
+Array4DMap              0.000      0.06      0.120  -45.8%      0.03      0.068  -66.1%    20.8KB
+ZOrderGlobalMap      2016.974      0.10      0.199  -10.4%      0.06      0.127  -36.9%     2.0GB
+
+SimpleHashMap           0.000      0.11      0.225   +1.2%      0.10      0.210   +4.1%    19.6KB
+FlatArrayMap            0.000      0.11      0.226   +1.9%      0.11      0.213   +5.4%    19.6KB
+RoomArrayMap            0.000      0.12      0.243   +9.6%      0.11      0.214   +6.0%    19.6KB
+BitPackedMap            0.000      0.08      0.162  -27.0%      0.11      0.214   +6.2%     2.5KB
+HierarchGridMap         0.000      0.12      0.231   +4.1%      0.11      0.222   +9.9%      304B
+DenseHashMap            0.000      0.12      0.231   +4.2%      0.11      0.224  +11.0%    19.6KB
+CachedSparseBlock       0.000      0.15      0.298  +34.2%      0.12      0.231  +14.5%      776B
+ChunkedZOrderMap        0.000      0.16      0.328  +47.6%      0.14      0.283  +40.4%       72B
+HashGridMap             0.000      0.25      0.508 +128.9%      0.15      0.304  +50.8%    51.6KB
+PrefixTreeMap           0.000      0.26      0.512 +130.8%      0.17      0.333  +65.3%    58.0KB
+QuadtreeMap             0.000      0.18      0.356  +60.2%      0.17      0.345  +71.3%     5.6KB
+SparseBlockMap          0.000      0.46      0.924 +316.3%      0.31      0.629 +211.9%    41.5KB
+RleZOrderMap            0.000      2.22      4.445 +1901.8%      0.63      1.257 +523.2%    12.0KB
+RunLengthDeltaMap       0.000      2.22      4.444 +1901.1%      0.64      1.289 +539.4%    12.1KB
+
+
+=== Flood Fill Pattern Test ===
+Points: 500, Room Transitions: 0
+Position Generation: 1.19ms (2.386µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.000      1.15      2.301   +0.0%      0.10      0.208   +0.0%    19.6KB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+GlobalArrayMap       1998.204      0.02      0.043  -98.1%      0.01      0.017  -91.9%     2.0GB
+CachedMultiroomMap      0.000      0.03      0.054  -97.7%      0.02      0.044  -78.7%    19.6KB
+VectorArrayMap          0.000      0.03      0.062  -97.3%      0.02      0.045  -78.6%    19.6KB
+CachedRoomArrayMap      0.000      0.03      0.055  -97.6%      0.03      0.053  -74.6%    19.6KB
+CachedRunLengthMap      0.000      9.81     19.624 +752.8%      0.03      0.053  -74.6%    12.1KB
+Array4DMap              0.000      0.05      0.099  -95.7%      0.03      0.067  -68.0%     9.2KB
+CachedSparseBlock       0.000      0.07      0.145  -93.7%      0.06      0.115  -44.9%      392B
+ZOrderGlobalMap      2004.529      0.08      0.163  -92.9%      0.06      0.124  -40.2%     2.0GB
+
+SimpleHashMap           0.000      0.11      0.227  -90.1%      0.11      0.211   +1.3%    19.6KB
+FlatArrayMap            0.000      0.11      0.227  -90.2%      0.11      0.213   +2.4%    19.6KB
+BitPackedMap            0.000      0.08      0.163  -92.9%      0.11      0.215   +3.4%     2.5KB
+RoomArrayMap            0.000      0.12      0.242  -89.5%      0.11      0.217   +4.2%    19.6KB
+HierarchGridMap         0.000      0.11      0.229  -90.0%      0.11      0.219   +5.4%      304B
+DenseHashMap            0.000      0.12      0.234  -89.8%      0.11      0.225   +8.3%    19.6KB
+ChunkedZOrderMap        0.000      0.16      0.327  -85.8%      0.14      0.281  +35.3%       72B
+HashGridMap             0.000      0.25      0.508  -77.9%      0.16      0.322  +54.7%    51.6KB
+PrefixTreeMap           0.000      0.23      0.463  -79.9%      0.16      0.329  +58.3%    35.8KB
+QuadtreeMap             0.000      0.17      0.346  -85.0%      0.17      0.337  +61.9%     2.1KB
+SparseBlockMap          0.000      0.41      0.827  -64.1%      0.24      0.473 +127.4%    21.1KB
+RleZOrderMap            0.000      2.66      5.319 +131.1%      0.70      1.396 +571.0%    12.0KB
+RunLengthDeltaMap       0.000      2.62      5.233 +127.4%      0.71      1.419 +581.8%    12.1KB
+
+Note: Set% and Get% show performance relative to MultiroomDistanceMap (+ is slower, - is faster)
+      Times are in milliseconds, per-point times in microseconds
+      Results are sorted by Get time (fastest to slowest)

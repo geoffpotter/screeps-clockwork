@@ -1,11 +1,12 @@
 
+use std::convert::TryFrom;
+
 use crate::algorithms::astar::metrics::PathfindingMetrics;
 use crate::algorithms::jps::jump;
 use crate::algorithms::jps::WorldPosition;
-use crate::algorithms::map::corresponding_room_edge;
+use crate::algorithms::jps::OBSTACLE;
 use crate::datatypes::ClockworkCostMatrix;
 use crate::datatypes::MultiroomDistanceMap;
-use crate::datatypes::OptionalCache;
 use crate::log;
 use crate::utils::{set_panic_hook, PROFILER};
 use crate::algorithms::astar::cost_cache::CostCache;
@@ -14,20 +15,12 @@ use screeps::CircleStyle;
 use screeps::Direction;
 use screeps::LineStyle;
 use screeps::Position;
-use screeps::RoomCoordinate;
 use screeps::RoomName;
 use screeps::RoomVisual;
 use screeps::TextAlign;
 use screeps::TextStyle;
-use screeps::game::cpu;
-use screeps::game::time;
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
-use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::throw_val;
-use std::cell::RefCell;
-use std::sync::Arc;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct State {
@@ -149,7 +142,7 @@ pub fn jps_multiroom_distance_map(
     let profiler = &PROFILER;
 
     // Turn this on to see visuals in-game:
-    const ENABLE_VISUALIZATION: bool = false;
+    const ENABLE_VISUALIZATION: bool = true;
 
     // Whether or not to profile sub-steps
     let profiling_enabled = false;
@@ -273,7 +266,7 @@ pub fn jps_multiroom_distance_map(
                 }
 
                 let first_step_cost = cost_cache.look(WorldPosition::from(first_step));
-                if first_step_cost >= 255 
+                if first_step_cost == OBSTACLE 
                     || current_room_distance_map[first_step.xy()] <= g_score.saturating_add(first_step_cost as usize) 
                     {
                     // Impassable
@@ -290,6 +283,9 @@ pub fn jps_multiroom_distance_map(
                 if let Some(neighbor) =
                     jump(position, first_step, *direction, first_step_cost, goals.as_slice())
                 {
+                    // if cost_cache.look(WorldPosition::from(neighbor)) == OBSTACLE {
+                    //     continue;
+                    // }
                     if profiling_enabled {
                         profiler.end_call("jump");
                         profiler.start_call("jump handling");
@@ -313,6 +309,14 @@ pub fn jps_multiroom_distance_map(
                             (neighbor.x().u8() as f32, neighbor.y().u8() as f32),
                             Some(LineStyle::default().color("#ff0000").width(0.05)),
                         );
+                        let terrain_cost = cost_cache.look(WorldPosition::from(neighbor));
+                        viz.text(
+                            neighbor.x().u8() as f32,
+                            neighbor.y().u8() as f32,
+                            format!("{}", terrain_cost),
+                            Some(TextStyle::default().font(0.175).align(TextAlign::Left).background_padding(0.1)),
+                        );
+                        
                     }
 
                     // Interpolate along the path to neighbor
@@ -343,7 +347,7 @@ pub fn jps_multiroom_distance_map(
                     let jump_range = position.get_range_to(neighbor);
                     metrics.max_jump_distance = metrics.max_jump_distance.max(jump_range as usize);
                     let terrain_cost = cost_cache.look(WorldPosition::from(neighbor));
-                    if terrain_cost >= 255 {
+                    if terrain_cost == OBSTACLE {
                         if profiling_enabled {
                             profiler.end_call("add_to_frontier");
                             profiler.end_call("jump handling");
@@ -463,7 +467,12 @@ pub fn js_jps_multiroom_distance_map(
     max_ops: usize,
     destinations: Vec<u32>,
 ) -> MultiroomDistanceMap {
-    // log("wtf???");
+    
+
+
+
+
+
     let start_positions = start_packed
         .iter()
         .map(|pos| Position::from_packed(*pos))

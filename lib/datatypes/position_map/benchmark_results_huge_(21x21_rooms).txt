@@ -1,0 +1,44 @@
+Benchmark Results - Huge (21x21 rooms)
+
+=== Spiral Pattern Test ===
+Points: 220500, Room Transitions: 4447
+Position Generation: 38.64ms (0.175µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.001     49.71      0.225   +0.0%     45.79      0.208   +0.0%     1.9MB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+CachedRoomArrayMap      0.000      7.72      0.035  -84.5%      6.33      0.029  -86.2%     1.9MB
+VectorArrayMap          0.001     12.01      0.054  -75.8%      7.72      0.035  -83.1%     1.9MB
+SimpleHashMap           0.000     44.85      0.203   -9.8%     43.16      0.196   -5.7%     1.9MB
+
+
+=== Zigzag Room Transitions Test ===
+Points: 220500, Room Transitions: 220004
+Position Generation: 309.91ms (1.405µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.001     64.26      0.291   +0.0%     56.25      0.255   +0.0%     8.4MB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+SimpleHashMap           0.000     55.26      0.251  -14.0%     52.58      0.238   -6.5%     8.4MB
+CachedRoomArrayMap      0.000     57.98      0.263   -9.8%     55.37      0.251   -1.6%     8.4MB
+
+VectorArrayMap          0.001     65.67      0.298   +2.2%     59.29      0.269   +5.4%     8.4MB
+
+
+=== Flood Fill Pattern Test ===
+Points: 220500, Room Transitions: 0
+Position Generation: 296.82ms (1.346µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.001     48.75      0.221   +0.0%     43.95      0.199   +0.0%     1.7MB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+CachedRoomArrayMap      0.001      6.78      0.031  -86.1%      5.56      0.025  -87.3%     1.7MB
+VectorArrayMap          0.001     10.42      0.047  -78.6%      6.43      0.029  -85.4%     1.7MB
+SimpleHashMap           0.001     44.65      0.203   -8.4%     43.18      0.196   -1.8%     1.7MB
+
+Note: Set% and Get% show performance relative to MultiroomDistanceMap (+ is slower, - is faster)
+      Times are in milliseconds, per-point times in microseconds
+      Results are sorted by Get time (fastest to slowest)

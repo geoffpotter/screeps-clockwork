@@ -7,6 +7,7 @@ mod multiroom_flow_field;
 mod multiroom_mono_flow_field;
 mod path;
 mod room_data_cache;
+mod position_map;
 
 pub use cost_matrix::ClockworkCostMatrix;
 pub use distance_map::DistanceMap;
@@ -15,3 +16,4 @@ pub use multiroom_flow_field::MultiroomFlowField;
 pub use multiroom_mono_flow_field::MultiroomMonoFlowField;
 pub use path::Path;
 pub use room_data_cache::RoomDataCache;
+pub use position_map::{GlobalPoint, ZOrderGlobalMap, ChunkedZOrderMap, RleZOrderMap};
