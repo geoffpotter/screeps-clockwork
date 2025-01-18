@@ -2,16 +2,28 @@ use std::time::Instant;
 use std::str::FromStr;
 use std::fs::File;
 use std::io::Write;
+use std::collections::HashSet;
 use screeps::{Position, RoomName, RoomCoordinate};
 use rand::Rng;
 use super::{
-    Array4DMap, BitPackedMap, CachedMultiroomMap, CachedRoomArrayMap, CachedRunLengthMap, CachedSparseBlockMap, ChunkedZOrderMap, DenseHashMap, FlatArrayMap, GlobalArrayMap, GlobalPoint, HashGridMap, HierarchicalGridMap, MapTrait, PrefixTreeMap, QuadtreeMap, RleZOrderMap, RoomArrayMap, RunLengthDeltaMap, SimpleHashMap, SparseBlockMap, VectorArrayMap, ZOrderGlobalMap
+    Array4DMap, BitPackedMap, CachedMultiroomMap, CachedRoomArrayMap, CachedRunLengthMap, CachedSparseBlockMap, ChunkedZOrderMap, DenseHashMap, FlatArrayMap, GlobalArrayMap, GlobalPoint, HashGridMap, HierarchicalGridMap, MapTrait, PrefixTreeMap, QuadtreeMap, RleZOrderMap, RoomArrayMap, RunLengthDeltaMap, SimpleHashMap, SparseBlockMap, VectorArrayMap, ZOrderGlobalMap, YMajorPackedMap, PositionOptions, DecomposedArray4DMap, ChunkedGlobalYMajorMap, ChunkedGlobalMap, YMajor2DMap
 };
 use crate::datatypes::MultiroomDistanceMap;
+use crate::datatypes::position::{
+    y_major_packed_position::YMajorPackedPosition,
+    DecomposedPosition, GlobalPosition, GlobalYMajorPosition
+};
+use crate::datatypes::fast_position;
 use plotters::prelude::*;
 
 const IMPLEMENTATIONS: &[(&str, bool)] = &[
     ("MultiroomDistMap", true),  // Always keep this one enabled
+
+    // New implementations
+    ("DecomposedArray4D", true),
+    ("ChunkedGlobalYMajor", true),
+    ("ChunkedGlobal", true),
+    // ("YMajor2D", true),
 
     // massive memory usage
     // ("GlobalArrayMap", true),
@@ -21,7 +33,6 @@ const IMPLEMENTATIONS: &[(&str, bool)] = &[
     // ("RleZOrderMap", true),
     // ("CachedRunLengthMap", true),
     // ("RunLengthDeltaMap", true),
-
 
     // pretty slow
     // ("HashGridMap", true),
@@ -37,14 +48,16 @@ const IMPLEMENTATIONS: &[(&str, bool)] = &[
     // ("FlatArrayMap", true),
     // ("SimpleHashMap", true),
 
-    // good memeory
-    ("CachedSparseBlock", true), // ?
-    ("BitPackedMap", true),
+    // good memory
+    // ("CachedSparseBlock", true), // ?
+    // ("BitPackedMap", true),
     // fast and ok memory
     ("VectorArrayMap", true),
     ("CachedMultiroomMap", true),
     ("CachedRoomArrayMap", true),
     ("Array4DMap", true),
+    ("YMajorPackedMap", true),
+
 ];
 
 const MIN_POINTS: usize = 1;
@@ -55,7 +68,7 @@ const NUM_TEST_POINTS: usize = 1000;
 mod tests {
     use super::*;
 
-    const ITERATIONS: usize = 5;  // Reduced from 20
+    const ITERATIONS: usize = 100;  // Reduced from 20
 
     fn run_benchmark_for_size(room_radius: i32, size_name: &str) {
         println!("\nBenchmarking enabled implementations - {}", size_name);
@@ -97,20 +110,20 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn benchmark_single_room() {
-    //     run_benchmark_for_size(0, "Single Room (1x1 rooms)");
-    // }
+    #[test]
+    fn benchmark_single_room() {
+        run_benchmark_for_size(0, "Single Room (1x1 rooms)");
+    }
 
-    // #[test]
-    // fn benchmark_small() {
-    //     run_benchmark_for_size(1, "Small (3x3 rooms)");
-    // }
+    #[test]
+    fn benchmark_small() {
+        run_benchmark_for_size(1, "Small (3x3 rooms)");
+    }
 
-    // #[test]
-    // fn benchmark_medium() {
-    //     run_benchmark_for_size(3, "Medium (7x7 rooms)");
-    // }
+    #[test]
+    fn benchmark_medium() {
+        run_benchmark_for_size(3, "Medium (7x7 rooms)");
+    }
 
     #[test]
     fn benchmark_large() {
@@ -200,6 +213,11 @@ mod tests {
                         "RleZOrderMap" => benchmark_implementation::<RleZOrderMap>(points, positions, transitions, iterations),
                         "CachedRunLengthMap" => benchmark_implementation::<CachedRunLengthMap>(points, positions, transitions, iterations),
                         "RunLengthDeltaMap" => benchmark_implementation::<RunLengthDeltaMap>(points, positions, transitions, iterations),
+                        "YMajorPackedMap" => benchmark_implementation::<YMajorPackedMap>(points, positions, transitions, iterations),
+                        "DecomposedArray4D" => benchmark_implementation::<DecomposedArray4DMap>(points, positions, transitions, iterations),
+                        "ChunkedGlobalYMajor" => benchmark_implementation::<ChunkedGlobalYMajorMap>(points, positions, transitions, iterations),
+                        "ChunkedGlobal" => benchmark_implementation::<ChunkedGlobalMap>(points, positions, transitions, iterations),
+                        "YMajor2D" => benchmark_implementation::<YMajor2DMap>(points, positions, transitions, iterations),
                         _ => panic!("Unknown implementation: {}", name),
                     };
                     
@@ -516,6 +534,7 @@ fn generate_test_points(room_radius: i32, pattern: TestPattern) -> (Vec<GlobalPo
     let mut positions = Vec::new();
     let mut transitions = 0;
     let mut last_room = None;
+    let mut seen_points = HashSet::new();
 
     match pattern {
         TestPattern::Spiral => {
@@ -545,31 +564,43 @@ fn generate_test_points(room_radius: i32, pattern: TestPattern) -> (Vec<GlobalPo
                 // For single room, only add points within room bounds
                 if room_radius == 0 {
                     if x >= 0 && x < room_size && y >= 0 && y < room_size {
-                        points.push(point);
-                        let pos = Position::from_world_coords(x, y);
-                        positions.push(pos);
-                        let (room, _, _) = ZOrderGlobalMap::global_to_room(point);
-                        if let Some(last) = last_room {
-                            if last != room {
-                                transitions += 1;
+                        if seen_points.insert(point) {
+                            points.push(point);
+                            let (room_name, local_x, local_y) = ZOrderGlobalMap::global_to_room(point);
+                            let pos = Position::new(
+                                RoomCoordinate::new(local_x as u8).unwrap(),
+                                RoomCoordinate::new(local_y as u8).unwrap(),
+                                room_name.parse().unwrap()
+                            );
+                            positions.push(pos);
+                            if let Some(last) = last_room {
+                                if last != room_name {
+                                    transitions += 1;
+                                }
                             }
+                            last_room = Some(room_name);
                         }
-                        last_room = Some(room);
                     }
                 } else {
                     // For multi-room, check against room radius
                     if (x as i32).abs() <= room_radius * room_size && 
                        (y as i32).abs() <= room_radius * room_size {
-                        points.push(point);
-                        let pos = Position::from_world_coords(x, y);
-                        positions.push(pos);
-                        let (room, _, _) = ZOrderGlobalMap::global_to_room(point);
-                        if let Some(last) = last_room {
-                            if last != room {
-                                transitions += 1;
+                        if seen_points.insert(point) {
+                            points.push(point);
+                            let (room_name, local_x, local_y) = ZOrderGlobalMap::global_to_room(point);
+                            let pos = Position::new(
+                                RoomCoordinate::new(local_x as u8).unwrap(),
+                                RoomCoordinate::new(local_y as u8).unwrap(),
+                                room_name.parse().unwrap()
+                            );
+                            positions.push(pos);
+                            if let Some(last) = last_room {
+                                if last != room_name {
+                                    transitions += 1;
+                                }
                             }
+                            last_room = Some(room_name);
                         }
-                        last_room = Some(room);
                     }
                 }
                 
@@ -602,7 +633,7 @@ fn generate_test_points(room_radius: i32, pattern: TestPattern) -> (Vec<GlobalPo
             let total_rooms = (2 * room_radius + 1) * (2 * room_radius + 1);
             let total_points = total_rooms as usize * points_per_room;
 
-            for _ in 0..total_points {
+            while points.len() < total_points {
                 let room_x = rng.gen_range(-room_radius..=room_radius);
                 let room_y = rng.gen_range(-room_radius..=room_radius);
                 let local_x = rng.gen_range(0..50);
@@ -610,18 +641,20 @@ fn generate_test_points(room_radius: i32, pattern: TestPattern) -> (Vec<GlobalPo
                 let x = room_x * 50 + local_x;
                 let y = room_y * 50 + local_y;
                 let point = GlobalPoint { x, y };
-                points.push(point);
                 
-                let (room, _, _) = ZOrderGlobalMap::global_to_room(point);
-                if let Some(last) = last_room {
-                    if last != room {
-                        transitions += 1;
+                if seen_points.insert(point) {
+                    points.push(point);
+                    let (room, _, _) = ZOrderGlobalMap::global_to_room(point);
+                    if let Some(last) = last_room {
+                        if last != room {
+                            transitions += 1;
+                        }
                     }
-                }
 
-                let pos = Position::from_world_coords(x, y);
-                positions.push(pos);
-                last_room = Some(room);
+                    let pos = Position::from_world_coords(x, y);
+                    positions.push(pos);
+                    last_room = Some(room);
+                }
             }
         },
         TestPattern::FloodFill => {
@@ -660,6 +693,23 @@ fn generate_test_points(room_radius: i32, pattern: TestPattern) -> (Vec<GlobalPo
                     // Check if point is within bounds
                     if room_radius == 0 {
                         if x >= 0 && x < room_size && y >= 0 && y < room_size {
+                            if seen_points.insert(point) {
+                                points.push(point);
+                                let pos = Position::from_world_coords(x, y);
+                                positions.push(pos);
+                                
+                                // Track room transitions
+                                let current_room = (room_x, room_y);
+                                if let Some(last) = last_room {
+                                    if last != current_room {
+                                        transitions += 1;
+                                    }
+                                }
+                                last_room = Some(current_room);
+                            }
+                        }
+                    } else if room_x.abs() <= room_radius && room_y.abs() <= room_radius {
+                        if seen_points.insert(point) {
                             points.push(point);
                             let pos = Position::from_world_coords(x, y);
                             positions.push(pos);
@@ -673,19 +723,6 @@ fn generate_test_points(room_radius: i32, pattern: TestPattern) -> (Vec<GlobalPo
                             }
                             last_room = Some(current_room);
                         }
-                    } else if room_x.abs() <= room_radius && room_y.abs() <= room_radius {
-                        points.push(point);
-                        let pos = Position::from_world_coords(x, y);
-                        positions.push(pos);
-                        
-                        // Track room transitions
-                        let current_room = (room_x, room_y);
-                        if let Some(last) = last_room {
-                            if last != current_room {
-                                transitions += 1;
-                            }
-                        }
-                        last_room = Some(current_room);
                     }
                     
                     // Add all neighboring points
@@ -713,6 +750,7 @@ fn run_benchmarks(points: &[GlobalPoint], positions: &[Position], transitions: u
             continue;
         }
         
+        println!("Testing implementation: {}", name);
         let result = match *name {
             "ZOrderGlobalMap" => benchmark_implementation::<ZOrderGlobalMap>(points, positions, transitions, iterations),
             "ChunkedZOrderMap" => benchmark_implementation::<ChunkedZOrderMap>(points, positions, transitions, iterations),
@@ -724,7 +762,7 @@ fn run_benchmarks(points: &[GlobalPoint], positions: &[Position], transitions: u
             "PrefixTreeMap" => benchmark_implementation::<PrefixTreeMap>(points, positions, transitions, iterations),
             "GlobalArrayMap" => benchmark_implementation::<GlobalArrayMap>(points, positions, transitions, iterations),
             "RoomArrayMap" => benchmark_implementation::<RoomArrayMap>(points, positions, transitions, iterations),
-            "VectorArrayMap" => benchmark_implementation::<VectorArrayMap>(points, positions, transitions, iterations),  // Add the new implementation
+            "VectorArrayMap" => benchmark_implementation::<VectorArrayMap>(points, positions, transitions, iterations),
             "Array4DMap" => benchmark_implementation::<Array4DMap>(points, positions, transitions, iterations),
             "FlatArrayMap" => benchmark_implementation::<FlatArrayMap>(points, positions, transitions, iterations),
             "DenseHashMap" => benchmark_implementation::<DenseHashMap>(points, positions, transitions, iterations),
@@ -736,6 +774,11 @@ fn run_benchmarks(points: &[GlobalPoint], positions: &[Position], transitions: u
             "RleZOrderMap" => benchmark_implementation::<RleZOrderMap>(points, positions, transitions, iterations),
             "CachedRunLengthMap" => benchmark_implementation::<CachedRunLengthMap>(points, positions, transitions, iterations),
             "RunLengthDeltaMap" => benchmark_implementation::<RunLengthDeltaMap>(points, positions, transitions, iterations),
+            "YMajorPackedMap" => benchmark_implementation::<YMajorPackedMap>(points, positions, transitions, iterations),
+            "DecomposedArray4D" => benchmark_implementation::<DecomposedArray4DMap>(points, positions, transitions, iterations),
+            "ChunkedGlobalYMajor" => benchmark_implementation::<ChunkedGlobalYMajorMap>(points, positions, transitions, iterations),
+            "ChunkedGlobal" => benchmark_implementation::<ChunkedGlobalMap>(points, positions, transitions, iterations),
+            "YMajor2D" => benchmark_implementation::<YMajor2DMap>(points, positions, transitions, iterations),
             _ => panic!("Unknown implementation: {}", name),
         };
         results.push(result);
@@ -751,35 +794,65 @@ fn benchmark_implementation<T: MapTrait>(points: &[GlobalPoint], positions: &[Po
     let mut memory_total = 0;
 
     for _ in 0..iterations {
-        // Benchmark initialization - measure just the new() call
+        // Benchmark initialization
         let start = Instant::now();
-        let map = T::new();
+        let mut map = T::new();
         init_time_total += start.elapsed().as_secs_f64();
         
-        // Move map into mutable binding for operations
-        let mut map = map;
-        
-        // Benchmark set operations
+        // Time set operations
         let start = Instant::now();
-        for (i, (&point, &pos)) in points.iter().zip(positions.iter()).enumerate() {
-            map.set(point, pos, i);
+        for i in 0..points.len() {
+            let pos = positions[i].clone();
+            let wpos = points[i].clone();
+            let packed_pos = YMajorPackedPosition::from_position(pos);
+            let global_y_major = GlobalYMajorPosition::from_position(pos);
+            let global_pos = GlobalPosition::from_position(pos);
+            let decomposed = DecomposedPosition::from_position(pos);
+
+            let options = PositionOptions {
+                position: pos,
+                y_major_packed_position: packed_pos,
+                global_point: wpos,
+                global_y_major_packed_position: global_y_major,
+                global_position: global_pos,
+                decomposed_position: decomposed,
+            };
+            map.set(options, i);
         }
         set_time_total += start.elapsed().as_secs_f64();
-        
-        // Benchmark get operations
+
+        // Time get operations
         let start = Instant::now();
-        for (&point, &pos) in points.iter().zip(positions.iter()) {
-            let _ = map.get(point, pos);
+        for i in 0..points.len() {
+            let pos = positions[i].clone();
+            let wpos = points[i].clone();
+            let packed_pos = YMajorPackedPosition::from_position(pos);
+            let global_y_major = GlobalYMajorPosition::from_position(pos);
+            let global_pos = GlobalPosition::from_position(pos);
+            let decomposed = DecomposedPosition::from_position(pos);
+
+            let options = PositionOptions {
+                position: pos,
+                y_major_packed_position: packed_pos,
+                global_point: wpos,
+                global_y_major_packed_position: global_y_major,
+                global_position: global_pos,
+                decomposed_position: decomposed,
+            };
+            
+            let value = map.get(options);
+
+            assert_eq!(value, i, "Value mismatch at point {:?} (expected {}, got {})", points[i], i, value);
         }
         get_time_total += start.elapsed().as_secs_f64();
-        
+
         memory_total += map.memory_usage();
     }
 
     BenchmarkResults {
         points: points.len(),
         transitions,
-        gen_time_ms: 0.0,  // Placeholder for generation time
+        gen_time_ms: 0.0,
         init_time_ms: init_time_total * 1000.0 / iterations as f64,
         set_time_ms: set_time_total * 1000.0 / iterations as f64,
         get_time_ms: get_time_total * 1000.0 / iterations as f64,
@@ -887,16 +960,18 @@ fn write_results_section(file: &mut File, results: &[BenchmarkResults]) -> std::
 }
 
 fn write_result_line(file: &mut File, name: &str, result: &BenchmarkResults, multiroom_result: &BenchmarkResults) -> std::io::Result<()> {
-    let points = result.points as f64;
-    let set_per_point = (result.set_time_ms * 1000.0) / points;
-    let get_per_point = (result.get_time_ms * 1000.0) / points;
-    
+    // Calculate percentages
     let set_pct = ((result.set_time_ms / multiroom_result.set_time_ms) - 1.0) * 100.0;
     let get_pct = ((result.get_time_ms / multiroom_result.get_time_ms) - 1.0) * 100.0;
     
+    // Format percentages and memory
     let set_pct_str = format_percentage(set_pct);
     let get_pct_str = format_percentage(get_pct);
     let memory_str = format_memory(result.memory_bytes);
+    
+    // Calculate per-point times
+    let set_per_point = (result.set_time_ms * 1000.0) / result.points as f64;
+    let get_per_point = (result.get_time_ms * 1000.0) / result.points as f64;
     
     writeln!(file, "{:20} {:8.3} {:9.2} {:10.3} {:>7} {:9.2} {:10.3} {:>7} {:>9}",
         name,

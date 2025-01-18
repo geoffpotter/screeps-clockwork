@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
-use screeps::Position;
+use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 /// Global map using Z-order curve split into chunks for memory efficiency
 pub struct ChunkedZOrderMap {
@@ -74,18 +75,24 @@ impl ChunkedZOrderMap {
 
 impl MapTrait for ChunkedZOrderMap {
     fn new() -> Self {
-        Self::new()
+        Self {
+            chunks: HashMap::new(),
+            min_x: i32::MAX,
+            max_x: i32::MIN,
+            min_y: i32::MAX,
+            max_y: i32::MIN,
+        }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let packed = pos.packed_repr();
-        let x = ((packed >> 24) as i8) as i32;
-        let y = (((packed >> 16) & 0xFF) as i8) as i32;
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let packed = options.position.packed_repr();
+        let room_x = ((packed >> 24) as i8) as i32;
+        let room_y = (((packed >> 16) & 0xFF) as i8) as i32;
         let local_x = ((packed >> 8) & 0xFF) as i32;
         let local_y = (packed & 0xFF) as i32;
-        
-        let global_x = x * 50 + local_x;
-        let global_y = y * 50 + local_y;
+
+        let global_x = room_x * 50 + local_x;
+        let global_y = room_y * 50 + local_y;
         
         let ((chunk_x, chunk_y), (local_x, local_y)) = Self::get_chunk_coords(global_x, global_y);
         
@@ -101,15 +108,15 @@ impl MapTrait for ChunkedZOrderMap {
         self.max_y = self.max_y.max(global_y);
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let packed = pos.packed_repr();
-        let x = ((packed >> 24) as i8) as i32;
-        let y = (((packed >> 16) & 0xFF) as i8) as i32;
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let packed = options.position.packed_repr();
+        let room_x = ((packed >> 24) as i8) as i32;
+        let room_y = (((packed >> 16) & 0xFF) as i8) as i32;
         let local_x = ((packed >> 8) & 0xFF) as i32;
         let local_y = (packed & 0xFF) as i32;
         
-        let global_x = x * 50 + local_x;
-        let global_y = y * 50 + local_y;
+        let global_x = room_x * 50 + local_x;
+        let global_y = room_y * 50 + local_y;
         
         let ((chunk_x, chunk_y), (local_x, local_y)) = Self::get_chunk_coords(global_x, global_y);
         

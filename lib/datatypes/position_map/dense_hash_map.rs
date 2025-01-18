@@ -1,25 +1,10 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
-use screeps::Position;
-
-const ROOM_SIZE: usize = 50;
+use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 pub struct DenseHashMap {
-    // Direct value storage with usize::MAX for empty slots
-    rooms: HashMap<(i32, i32), Box<[usize; ROOM_SIZE * ROOM_SIZE]>>,
-}
-
-impl DenseHashMap {
-    fn get_indices(pos: Position) -> (i32, i32, usize) {
-        let packed = pos.packed_repr();
-        let room_x = ((packed >> 24) as i8) as i32;
-        let room_y = (((packed >> 16) & 0xFF) as i8) as i32;
-        let local_x = ((packed >> 8) & 0xFF) as usize;
-        let local_y = (packed & 0xFF) as usize;
-        
-        let index = local_y * ROOM_SIZE + local_x;
-        (room_x, room_y, index)
-    }
+    rooms: HashMap<RoomName, Box<[usize; 2500]>>,
 }
 
 impl MapTrait for DenseHashMap {
@@ -29,26 +14,36 @@ impl MapTrait for DenseHashMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let (room_x, room_y, index) = Self::get_indices(pos);
-        let room = self.rooms.entry((room_x, room_y))
-            .or_insert_with(|| Box::new([usize::MAX; ROOM_SIZE * ROOM_SIZE]));
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8() as usize;
+        let y = options.position.y().u8() as usize;
+        let index = y * 50 + x;
+
+        let room = self.rooms.entry(room_name)
+            .or_insert_with(|| Box::new([usize::MAX; 2500]));
         room[index] = value;
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let (room_x, room_y, index) = Self::get_indices(pos);
-        self.rooms.get(&(room_x, room_y))
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8() as usize;
+        let y = options.position.y().u8() as usize;
+        let index = y * 50 + x;
+
+        self.rooms.get(&room_name)
             .map(|room| room[index])
             .unwrap_or(usize::MAX)
     }
 
     fn memory_usage(&self) -> usize {
-        let mut total = std::mem::size_of::<HashMap<(i32, i32), Box<[usize; ROOM_SIZE * ROOM_SIZE]>>>();
+        // Size of HashMap overhead
+        let base_size = std::mem::size_of::<HashMap<RoomName, Box<[usize; 2500]>>>();
         
-        // Add size of each room's array
-        total += self.rooms.len() * ROOM_SIZE * ROOM_SIZE * std::mem::size_of::<usize>();
+        // Size of each room's array
+        let room_size = std::mem::size_of::<Box<[usize; 2500]>>();
         
-        total
+        // Total size
+        base_size + (self.rooms.len() * room_size)
     }
 } 

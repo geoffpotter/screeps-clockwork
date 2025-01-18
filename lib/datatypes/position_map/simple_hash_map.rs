@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
 use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: usize = 50;
 const ROOM_AREA: usize = ROOM_SIZE * ROOM_SIZE;
@@ -17,22 +18,22 @@ impl MapTrait for SimpleHashMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let room_name = pos.room_name();
-        let local_x = pos.x().u8() as usize;
-        let local_y = pos.y().u8() as usize;
-        let index = local_y * ROOM_SIZE + local_x;
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8() as usize;
+        let y = options.position.y().u8() as usize;
+        let index = y * ROOM_SIZE + x;
         
         let room = self.rooms.entry(room_name)
             .or_insert_with(|| Box::new([usize::MAX; ROOM_AREA]));
         room[index] = value;
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let room_name = pos.room_name();
-        let local_x = pos.x().u8() as usize;
-        let local_y = pos.y().u8() as usize;
-        let index = local_y * ROOM_SIZE + local_x;
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8() as usize;
+        let y = options.position.y().u8() as usize;
+        let index = y * ROOM_SIZE + x;
         
         self.rooms.get(&room_name)
             .map(|room| room[index])

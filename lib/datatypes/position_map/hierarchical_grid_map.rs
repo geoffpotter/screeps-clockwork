@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
 use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: usize = 50;
 const GRID_SIZE: usize = 10;
@@ -57,10 +58,10 @@ impl MapTrait for HierarchicalGridMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         
         let room = self.rooms.entry(room_name).or_insert_with(RoomLayer::new);
         let (grid_idx, local_x, local_y) = RoomLayer::get_indices(x, y);
@@ -69,10 +70,10 @@ impl MapTrait for HierarchicalGridMap {
         room.grids[grid_idx].cells[cell_idx] = value;
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         
         self.rooms.get(&room_name)
             .map(|room| {

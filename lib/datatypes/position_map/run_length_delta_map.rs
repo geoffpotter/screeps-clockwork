@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
 use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 pub struct RunLengthDeltaMap {
     rooms: HashMap<RoomName, RoomEncoding>,
@@ -104,22 +105,22 @@ impl MapTrait for RunLengthDeltaMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         let index = RoomEncoding::get_index(x, y);
-        
+
         let room = self.rooms.entry(room_name).or_insert_with(RoomEncoding::new);
         room.set(index, value);
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         let index = RoomEncoding::get_index(x, y);
-        
+
         self.rooms.get(&room_name)
             .map(|room| room.get(index))
             .unwrap_or(usize::MAX)

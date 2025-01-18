@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
 use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: usize = 50;
 
@@ -35,10 +36,10 @@ impl MapTrait for CachedMultiroomMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         let index = Self::get_index(x, y);
         
         // Try to use cached room first
@@ -55,14 +56,16 @@ impl MapTrait for CachedMultiroomMap {
                 .or_insert_with(|| Box::new([usize::MAX; ROOM_SIZE * ROOM_SIZE]));
             room[index] = value;
             
+            // Update cache after inserting new room
+            self.cached_room_coords = Some(room_name);
             self.cached_room = Some(room.as_mut() as *mut _);
         }
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         let index = Self::get_index(x, y);
         
         // Update cache just like in set
@@ -84,8 +87,14 @@ impl MapTrait for CachedMultiroomMap {
     fn memory_usage(&self) -> usize {
         let mut total = std::mem::size_of::<Self>();
         
-        // Add size of each room's array
-        total += self.rooms.len() * ROOM_SIZE * ROOM_SIZE * std::mem::size_of::<usize>();
+        // Add size of HashMap's internal allocations (capacity * (key + value + internal node data))
+        let hash_map_capacity = self.rooms.capacity();
+        total += hash_map_capacity * (std::mem::size_of::<RoomName>() + std::mem::size_of::<Box<[usize; ROOM_SIZE * ROOM_SIZE]>>());
+        
+        // Add size of each room's array including Box allocation
+        total += self.rooms.len() * (
+            std::mem::size_of::<[usize; ROOM_SIZE * ROOM_SIZE]>() // The array itself
+        );
         
         total
     }

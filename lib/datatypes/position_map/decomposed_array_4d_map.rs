@@ -1,38 +1,19 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, option};
 use screeps::{Position, RoomName};
 use super::{GlobalPoint, MapTrait, PositionOptions};
-use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
+use crate::datatypes::{fast_position, position::DecomposedPosition};
 
 const ROOM_SIZE: usize = 50;
 const ROOM_RADIUS: usize = 128; // Support ±128 rooms in each direction
 const ROOM_ARRAY_SIZE: usize = ROOM_RADIUS * 2;
 
-pub struct Array4DMap {
+pub struct DecomposedArray4DMap {
     // 4D vector with dimensions [room_x][room_y][local_x][local_y]
     // Vectors are created on demand when values are set
     values: Vec<Option<Vec<Option<Vec<Option<Vec<usize>>>>>>>,
 }
 
-impl Array4DMap {
-    fn get_indices(pos: Position) -> Option<(usize, usize, usize, usize)> {
-        let packed = pos.packed_repr();
-        // Extract signed room coordinates
-        let room_x = ((packed >> 24) as i8) as i32;
-        let room_y = (((packed >> 16) & 0xFF) as i8) as i32;
-        let local_x = ((packed >> 8) & 0xFF) as usize;
-        let local_y = (packed & 0xFF) as usize;
-        
-        // Convert room coordinates to array indices with offset
-        let room_x_idx = (room_x + ROOM_RADIUS as i32) as usize;
-        let room_y_idx = (room_y + ROOM_RADIUS as i32) as usize;
-        
-        // Check bounds
-        if room_x_idx >= ROOM_ARRAY_SIZE || room_y_idx >= ROOM_ARRAY_SIZE {
-            return None;
-        }
-        
-        Some((room_x_idx, room_y_idx, local_x, local_y))
-    }
+impl DecomposedArray4DMap {
 
     fn ensure_path(&mut self, room_x: usize, room_y: usize, x: usize, y: usize) -> &mut usize {
         // Ensure room_x vector exists
@@ -76,7 +57,7 @@ impl Array4DMap {
     }
 }
 
-impl MapTrait for Array4DMap {
+impl MapTrait for DecomposedArray4DMap {
     fn new() -> Self {
         Self {
             values: Vec::new(),
@@ -84,19 +65,22 @@ impl MapTrait for Array4DMap {
     }
 
     fn set(&mut self, options: PositionOptions, value: usize) {
-        if let Some((room_x, room_y, x, y)) = Self::get_indices(options.position) {
-            *self.ensure_path(room_x, room_y, x, y) = value;
-        }
+        let pos = options.decomposed_position.decomposed();
+        *self.ensure_path(pos.0 as usize, pos.1 as usize, pos.2 as usize, pos.3 as usize) = value;
+        
     }
 
     fn get(&mut self, options: PositionOptions) -> usize {
-        Self::get_indices(options.position)
-            .and_then(|(room_x, room_y, x, y)| {
-                self.values.get(room_x)?.as_ref()?
-                    .get(room_y)?.as_ref()?
-                    .get(x)?.as_ref()?
-                    .get(y).copied()
-            })
+        let (room_x, room_y, x, y) = options.decomposed_position.decomposed();
+        self.values
+            .get(room_x as usize)
+            .and_then(|v| v.as_ref())
+            .and_then(|v| v.get(room_y as usize))
+            .and_then(|v| v.as_ref())
+            .and_then(|v| v.get(x as usize))
+            .and_then(|v| v.as_ref())
+            .and_then(|v| v.get(y as usize))
+            .copied()
             .unwrap_or(usize::MAX)
     }
 

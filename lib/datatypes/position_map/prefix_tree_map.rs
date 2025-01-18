@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
-use screeps::Position;
+use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: i32 = 50;
 const BITS_PER_COORD: u32 = 16;  // Using 16 bits per coordinate for global positions
@@ -99,13 +100,13 @@ impl MapTrait for PrefixTreeMap {
         }
     }
 
-    fn set(&mut self, wpos: GlobalPoint, _pos: Position, value: usize) {
-        let encoded = Self::encode_position(wpos);
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let encoded = Self::encode_position(options.global_point);
         self.root.insert(encoded, 0, value);
     }
 
-    fn get(&mut self, wpos: GlobalPoint, _pos: Position) -> usize {
-        let encoded = Self::encode_position(wpos);
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let encoded = Self::encode_position(options.global_point);
         self.root.get(encoded, 0)
     }
 

@@ -2,74 +2,59 @@ Benchmark Results - Huge (21x21 rooms)
 
 === Spiral Pattern Test ===
 Points: 220500, Room Transitions: 4447
-Position Generation: 34.23ms (0.155µs/pt)
+Position Generation: 212.14ms (0.962µs/pt)
 
 Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
 -------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
-MultiroomDistMap        0.001     48.88      0.222   +0.0%     44.13      0.200   +0.0%     1.9MB
+MultiroomDistMap        0.001     55.33      0.251   +0.0%     53.02      0.240   +0.0%     1.9MB
 -------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
-GlobalArrayMap       1902.139      4.00      0.018  -91.8%      3.45      0.016  -92.2%     2.0GB
-CachedRoomArrayMap      0.001      7.73      0.035  -84.2%      6.37      0.029  -85.6%     1.9MB
-CachedMultiroomMap      0.001      8.81      0.040  -82.0%      7.03      0.032  -84.1%     1.9MB
-VectorArrayMap          0.001     11.14      0.051  -77.2%      7.15      0.032  -83.8%     1.9MB
-CachedSparseBlock       0.001     16.14      0.073  -67.0%     12.12      0.055  -72.5%    59.6KB
-Array4DMap              0.000     18.31      0.083  -62.5%     14.92      0.068  -66.2%     1.9MB
-ZOrderGlobalMap      1945.958     31.19      0.141  -36.2%     27.12      0.123  -38.5%     2.0GB
-SimpleHashMap           0.002     44.78      0.203   -8.4%     43.56      0.198   -1.3%     1.9MB
+YMajorPackedMap         0.000     14.56      0.066  -73.7%     14.43      0.065  -72.8%     1.9MB
+CachedRoomArrayMap      0.000     16.60      0.075  -70.0%     16.32      0.074  -69.2%     1.9MB
+CachedMultiroomMap      0.000     17.40      0.079  -68.5%     17.02      0.077  -67.9%     1.9MB
+DecomposedArray4D       0.000     28.24      0.128  -49.0%     23.43      0.106  -55.8%     1.9MB
+Array4DMap              0.000     27.66      0.125  -50.0%     24.35      0.110  -54.1%     1.9MB
+ChunkedGlobalYMajor     0.000     33.20      0.151  -40.0%     33.77      0.153  -36.3%     2.5MB
+VectorArrayMap          0.000     52.06      0.236   -5.9%     51.61      0.234   -2.7%     2.6KB
 
-RoomArrayMap            0.002     45.50      0.206   -6.9%     44.27      0.201   +0.3%     1.9MB
-FlatArrayMap            0.001     44.21      0.201   -9.5%     44.31      0.201   +0.4%     1.9MB
-HierarchGridMap         0.001     47.45      0.215   -2.9%     46.23      0.210   +4.8%    20.4KB
-DenseHashMap            0.002     50.51      0.229   +3.3%     49.30      0.224  +11.7%     1.9MB
-BitPackedMap            0.002      3.07      0.014  -93.7%     57.74      0.262  +30.9%     9.9KB
+ChunkedGlobal           0.000     59.60      0.270   +7.7%     63.75      0.289  +20.2%     2.5MB
 
 
 === Zigzag Room Transitions Test ===
-Points: 220500, Room Transitions: 219934
-Position Generation: 306.91ms (1.392µs/pt)
+Points: 220500, Room Transitions: 220018
+Position Generation: 450.81ms (2.044µs/pt)
 
 Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
 -------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
-MultiroomDistMap        0.002     70.34      0.319   +0.0%     64.10      0.291   +0.0%     8.4MB
+MultiroomDistMap        0.001     60.05      0.272   +0.0%     56.58      0.257   +0.0%     8.4MB
 -------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
-GlobalArrayMap       1935.817     25.64      0.116  -63.6%     15.50      0.070  -75.8%     2.0GB
-Array4DMap              0.000     32.25      0.146  -54.2%     20.35      0.092  -68.2%     8.9MB
-ZOrderGlobalMap      1892.002     51.86      0.235  -26.3%     40.91      0.186  -36.2%     2.0GB
-BitPackedMap            0.001      6.63      0.030  -90.6%     57.80      0.262   -9.8%   472.0KB
-RoomArrayMap            0.001     66.04      0.300   -6.1%     58.91      0.267   -8.1%     8.4MB
-VectorArrayMap          0.001     65.15      0.295   -7.4%     60.19      0.273   -6.1%     8.4MB
-CachedMultiroomMap      0.001     65.47      0.297   -6.9%     60.38      0.274   -5.8%     8.4MB
-FlatArrayMap            0.001     61.55      0.279  -12.5%     61.10      0.277   -4.7%     8.4MB
-DenseHashMap            0.001     65.04      0.295   -7.5%     62.20      0.282   -3.0%     8.4MB
-SimpleHashMap           0.001     64.53      0.293   -8.3%     62.63      0.284   -2.3%     8.4MB
-CachedRoomArrayMap      0.001     66.90      0.303   -4.9%     63.13      0.286   -1.5%     8.4MB
+DecomposedArray4D       0.000     34.91      0.158  -41.9%     25.34      0.115  -55.2%     8.9MB
+Array4DMap              0.000     34.65      0.157  -42.3%     25.89      0.117  -54.2%     8.9MB
+ChunkedGlobalYMajor     0.001     35.02      0.159  -41.7%     35.55      0.161  -37.2%     9.0MB
+VectorArrayMap          0.000     58.92      0.267   -1.9%     55.05      0.250   -2.7%    11.2KB
+YMajorPackedMap         0.000     55.44      0.251   -7.7%     55.85      0.253   -1.3%     8.4MB
 
-HierarchGridMap         0.001     68.20      0.309   -3.0%     65.95      0.299   +2.9%    89.7KB
-CachedSparseBlock       0.001    135.90      0.616  +93.2%    122.04      0.553  +90.4%   282.6KB
+CachedRoomArrayMap      0.000     58.53      0.265   -2.5%     59.33      0.269   +4.9%     8.4MB
+CachedMultiroomMap      0.000     61.90      0.281   +3.1%     59.81      0.271   +5.7%     8.4MB
+ChunkedGlobal           0.000     62.31      0.283   +3.8%     65.72      0.298  +16.2%     9.0MB
 
 
 === Flood Fill Pattern Test ===
 Points: 441000, Room Transitions: 379510
-Position Generation: 1068.32ms (2.422µs/pt)
+Position Generation: 1217.76ms (2.761µs/pt)
 
 Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
 -------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
-MultiroomDistMap        0.001     98.56      0.223   +0.0%     89.77      0.204   +0.0%     4.3MB
+MultiroomDistMap        0.001    110.49      0.251   +0.0%    105.17      0.238   +0.0%     4.3MB
 -------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
-GlobalArrayMap       1912.111     12.05      0.027  -87.8%      9.03      0.020  -89.9%     2.0GB
-Array4DMap              0.000     36.94      0.084  -62.5%     30.22      0.069  -66.3%     4.0MB
-ZOrderGlobalMap      1902.903     61.41      0.139  -37.7%     53.53      0.121  -40.4%     2.0GB
-CachedRoomArrayMap      0.000     87.62      0.199  -11.1%     80.25      0.182  -10.6%     4.3MB
-CachedMultiroomMap      0.001     90.21      0.205   -8.5%     80.69      0.183  -10.1%     4.3MB
-VectorArrayMap          0.001     90.69      0.206   -8.0%     81.54      0.185   -9.2%     4.3MB
-SimpleHashMap           0.001     89.19      0.202   -9.5%     87.21      0.198   -2.9%     4.3MB
-RoomArrayMap            0.001     92.24      0.209   -6.4%     87.44      0.198   -2.6%     4.3MB
-FlatArrayMap            0.001     89.29      0.202   -9.4%     87.61      0.199   -2.4%     4.3MB
+DecomposedArray4D       0.000     56.47      0.128  -48.9%     46.87      0.106  -55.4%     4.0MB
+Array4DMap              0.000     55.54      0.126  -49.7%     48.95      0.111  -53.5%     4.0MB
+ChunkedGlobalYMajor     0.001     66.63      0.151  -39.7%     68.18      0.155  -35.2%     3.8MB
+YMajorPackedMap         0.001     92.87      0.211  -15.9%     94.25      0.214  -10.4%     4.3MB
+CachedMultiroomMap      0.001    102.39      0.232   -7.3%     99.44      0.225   -5.4%     4.3MB
+CachedRoomArrayMap      0.001     97.58      0.221  -11.7%     99.51      0.226   -5.4%     4.3MB
+VectorArrayMap          0.001    105.17      0.238   -4.8%    103.72      0.235   -1.4%     5.8KB
 
-HierarchGridMap         0.002     92.93      0.211   -5.7%     90.36      0.205   +0.7%    45.8KB
-DenseHashMap            0.001    100.58      0.228   +2.0%     98.51      0.223   +9.7%     4.3MB
-BitPackedMap            0.001      5.82      0.013  -94.1%    114.78      0.260  +27.9%     2.5KB
-CachedSparseBlock       0.001    187.69      0.426  +90.4%    180.35      0.409 +100.9%   117.6KB
+ChunkedGlobal           0.001    120.14      0.272   +8.7%    127.62      0.289  +21.3%     3.8MB
 
 Note: Set% and Get% show performance relative to MultiroomDistanceMap (+ is slower, - is faster)
       Times are in milliseconds, per-point times in microseconds

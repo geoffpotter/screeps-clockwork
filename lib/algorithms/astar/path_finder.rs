@@ -371,8 +371,8 @@ impl PathFinder {
 
     pub fn search(&mut self, origin: Position, goals: &[Position]) -> Option<Vec<Position>> {
         let start_cpu = cpu::get_used();
-        let PROFILING_ENABLED = false;
-        if PROFILING_ENABLED {
+        let profiling_enabled = false;
+        if profiling_enabled {
             PROFILER.start_call("init");
         }
         self.debug_log(&format!("Starting search from {:?} to {:?}", origin, goals));
@@ -403,17 +403,17 @@ impl PathFinder {
         let mut min_node_g_cost = Cost::MAX;
         let mut total_ops = 0;
         
-        if PROFILING_ENABLED {
+        if profiling_enabled {
             PROFILER.end_call("init");
         }
         // Main search loop
         while let Some(current) = self.open_set.pop() {
-            if PROFILING_ENABLED {
+            if profiling_enabled {
                 PROFILER.start_call("op_init");
             }
             if ops_remaining == 0 {
                 self.debug_log("Search terminated: out of operations");
-                if PROFILING_ENABLED {
+                if profiling_enabled {
                     PROFILER.end_call("op_init");
                 }
                 break;
@@ -424,7 +424,7 @@ impl PathFinder {
 
             // Skip if already closed
             if self.closed_set.contains(&current_index) {
-                if PROFILING_ENABLED {
+                if profiling_enabled {
                     PROFILER.end_call("op_init");
                 }
                 continue;
@@ -436,7 +436,7 @@ impl PathFinder {
                 self.parents.insert(current_index, parent);
             }
 
-            if PROFILING_ENABLED {
+            if profiling_enabled {
                 PROFILER.end_call("op_init");
                 PROFILER.start_call("op_score");
             }
@@ -451,7 +451,7 @@ impl PathFinder {
                 min_node = Some(current);
                 min_node_h_cost = 0;
                 min_node_g_cost = g_cost;
-                if PROFILING_ENABLED {
+                if profiling_enabled {
                     PROFILER.end_call("op_score");
                 }
                 break;
@@ -463,31 +463,31 @@ impl PathFinder {
 
             if g_cost + h_cost > self.max_cost {
                 self.debug_log("Search terminated: exceeded max cost");
-                if PROFILING_ENABLED {
+                if profiling_enabled {
                     PROFILER.end_call("op_score");
                 }
                 break;
             }
-            if PROFILING_ENABLED {
+            if profiling_enabled {
                 PROFILER.end_call("op_score");
             }
 
             // Add next neighbors using JPS
-            if PROFILING_ENABLED {
+            if profiling_enabled {
                 PROFILER.start_call("op_expand");
             }
             // self.expand_astar(current_pos, current_index, g_cost);
             self.jps(current_index, current_pos, g_cost);
             ops_remaining -= 1;
             total_ops += 1;
-            if PROFILING_ENABLED {
+            if profiling_enabled {
                 PROFILER.end_call("op_expand");
             }
         }
         let cpu_used = cpu::get_used() - start_cpu;
         log(&format!("Search completed with {} total ops, {} CPU used", total_ops, cpu_used));
 
-        if PROFILING_ENABLED {
+        if profiling_enabled {
             PROFILER.start_call("path_reconstruction");
         }
         // Reconstruct path
@@ -533,7 +533,7 @@ impl PathFinder {
                 current_index = parent_index;
             }
             path.reverse();
-            if PROFILING_ENABLED {
+            if profiling_enabled {
                 PROFILER.end_call("path_reconstruction");
             }
             PROFILER.print_results();

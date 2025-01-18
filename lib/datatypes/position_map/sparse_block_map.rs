@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
+use super::{GlobalPoint, MapTrait, PositionOptions};
 use screeps::Position;
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const BLOCK_SIZE: usize = 8;  // 8x8 blocks
 
@@ -102,8 +103,8 @@ impl MapTrait for SparseBlockMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let ((room_x, room_y), (block_x, block_y), (pos_x, pos_y)) = Self::get_indices(pos);
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let ((room_x, room_y), (block_x, block_y), (pos_x, pos_y)) = Self::get_indices(options.position);
         
         let room = self.rooms.entry((room_x, room_y)).or_insert_with(RoomBlocks::default);
         let block = room.blocks.entry((block_x, block_y)).or_insert_with(Block::new_sparse);
@@ -111,8 +112,8 @@ impl MapTrait for SparseBlockMap {
         block.set(pos_x, pos_y, value);
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let ((room_x, room_y), (block_x, block_y), (pos_x, pos_y)) = Self::get_indices(pos);
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let ((room_x, room_y), (block_x, block_y), (pos_x, pos_y)) = Self::get_indices(options.position);
         
         self.rooms.get(&(room_x, room_y))
             .and_then(|room| room.blocks.get(&(block_x, block_y)))

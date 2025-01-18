@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
-use screeps::Position;
+use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const WORLD_SIZE: i32 = 16384; // 2^14, smaller but still plenty big
 const ARRAY_SIZE: usize = (WORLD_SIZE as usize) * (WORLD_SIZE as usize);
@@ -32,14 +33,14 @@ impl MapTrait for GlobalArrayMap {
         }
     }
 
-    fn set(&mut self, wpos: GlobalPoint, _pos: Position, value: usize) {
-        if let Some(index) = Self::get_index(wpos) {
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        if let Some(index) = Self::get_index(options.global_point) {
             self.values[index] = value;
         }
     }
 
-    fn get(&mut self, wpos: GlobalPoint, _pos: Position) -> usize {
-        Self::get_index(wpos)
+    fn get(&mut self, options: PositionOptions) -> usize {
+        Self::get_index(options.global_point)
             .map(|index| self.values[index])
             .unwrap_or(usize::MAX)
     }

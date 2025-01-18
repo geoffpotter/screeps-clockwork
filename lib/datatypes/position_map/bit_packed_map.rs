@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
 use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
 
 const ROOM_SIZE: usize = 50;
 const BITS_PER_VALUE: usize = 8; // Store values 0-255
@@ -9,6 +9,7 @@ const VALUE_MASK: u64 = (1 << BITS_PER_VALUE) - 1;
 const ROOM_AREA: usize = ROOM_SIZE * ROOM_SIZE;
 const WORDS_PER_ROOM: usize = (ROOM_AREA + VALUES_PER_WORD - 1) / VALUES_PER_WORD;
 const MISSING_VALUE: u64 = VALUE_MASK; // Use max value (255) to represent missing values
+const MISSING_VALUE_WORD: u64 = 0; // Use 0 to represent missing values in the word
 
 pub struct BitPackedMap {
     // Each u64 stores multiple values
@@ -32,15 +33,16 @@ impl MapTrait for BitPackedMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
+    fn set(&mut self, options: PositionOptions, value: usize) {
         // Handle values that are too large or represent missing
         if value >= (1 << BITS_PER_VALUE) || value == usize::MAX {
+            // println!("Value too large or missing, I'm cheating.: {}", value);
             return;
         }
 
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         let (word_idx, bit_offset) = Self::get_indices(x, y);
         
         let room = self.rooms.entry(room_name)
@@ -48,9 +50,7 @@ impl MapTrait for BitPackedMap {
                 let mut room = Box::new([0; WORDS_PER_ROOM]);
                 // Initialize all values to MISSING_VALUE
                 for word in room.iter_mut() {
-                    for i in 0..VALUES_PER_WORD {
-                        *word |= MISSING_VALUE << (i * BITS_PER_VALUE);
-                    }
+                    *word = MISSING_VALUE_WORD;
                 }
                 room
             });
@@ -60,10 +60,10 @@ impl MapTrait for BitPackedMap {
         room[word_idx] |= (value as u64) << bit_offset;
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8();
+        let y = options.position.y().u8();
         let (word_idx, bit_offset) = Self::get_indices(x, y);
         
         self.rooms.get(&room_name)
@@ -79,14 +79,13 @@ impl MapTrait for BitPackedMap {
     }
 
     fn memory_usage(&self) -> usize {
-        let mut total = std::mem::size_of::<Self>();
+        // Size of HashMap overhead
+        let base_size = std::mem::size_of::<HashMap<RoomName, Box<[u64; WORDS_PER_ROOM]>>>();
         
-        // Size of room HashMap
-        total += std::mem::size_of::<HashMap<RoomName, Box<[u64; WORDS_PER_ROOM]>>>();
+        // Size of each room's data
+        let room_size = std::mem::size_of::<Box<[u64; WORDS_PER_ROOM]>>();
         
-        // Size of arrays in each room
-        total += self.rooms.len() * WORDS_PER_ROOM * std::mem::size_of::<u64>();
-        
-        total
+        // Total size
+        base_size + (self.rooms.len() * room_size)
     }
 } 

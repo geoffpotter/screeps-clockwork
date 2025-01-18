@@ -1,20 +1,13 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
 use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: usize = 50;
-const ARRAY_SIZE: usize = ROOM_SIZE * ROOM_SIZE;
+const ROOM_AREA: usize = ROOM_SIZE * ROOM_SIZE;
 
 pub struct RoomArrayMap {
-    // Map from room name to room arrays
-    rooms: HashMap<RoomName, Box<[usize]>>,
-}
-
-impl RoomArrayMap {
-    fn get_index(x: u8, y: u8) -> usize {
-        // Y-major indexing
-        (y as usize) * ROOM_SIZE + (x as usize)
-    }
+    rooms: HashMap<RoomName, Box<[usize; ROOM_AREA]>>,
 }
 
 impl MapTrait for RoomArrayMap {
@@ -24,23 +17,22 @@ impl MapTrait for RoomArrayMap {
         }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
-        let index = Self::get_index(x, y);
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8() as usize;
+        let y = options.position.y().u8() as usize;
+        let index = y * ROOM_SIZE + x;
         
         let room = self.rooms.entry(room_name)
-            .or_insert_with(|| vec![usize::MAX; ARRAY_SIZE].into_boxed_slice());
-            
+            .or_insert_with(|| Box::new([usize::MAX; ROOM_AREA]));
         room[index] = value;
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let room_name = pos.room_name();
-        let x = pos.x().u8();
-        let y = pos.y().u8();
-        let index = Self::get_index(x, y);
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let room_name = options.position.room_name();
+        let x = options.position.x().u8() as usize;
+        let y = options.position.y().u8() as usize;
+        let index = y * ROOM_SIZE + x;
         
         self.rooms.get(&room_name)
             .map(|room| room[index])
@@ -48,13 +40,13 @@ impl MapTrait for RoomArrayMap {
     }
 
     fn memory_usage(&self) -> usize {
-        let mut total = 0;
+        let mut total = std::mem::size_of::<Self>();
         
-        // Size of room hashmap
-        total += std::mem::size_of::<HashMap<RoomName, Box<[usize]>>>();
+        // Size of room HashMap
+        total += self.rooms.len() * std::mem::size_of::<(RoomName, Box<[usize; ROOM_AREA]>)>();
         
-        // Size of each room's array
-        total += self.rooms.len() * ARRAY_SIZE * std::mem::size_of::<usize>();
+        // Size of arrays in each room
+        total += self.rooms.len() * std::mem::size_of::<[usize; ROOM_AREA]>();
         
         total
     }

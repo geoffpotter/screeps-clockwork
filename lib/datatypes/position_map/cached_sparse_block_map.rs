@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use screeps::Position;
-use super::MapTrait;
+use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: usize = 50;
 const BLOCK_SIZE: usize = 10;
@@ -75,8 +76,8 @@ impl MapTrait for CachedSparseBlockMap {
         }
     }
 
-    fn set(&mut self, _wpos: super::GlobalPoint, pos: Position, value: usize) {
-        let (room_x, room_y, block_x, block_y, block_index) = Self::get_indices(pos);
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let (room_x, room_y, block_x, block_y, block_index) = Self::get_indices(options.position);
         self.update_cache(room_x, room_y, block_x, block_y);
         
         if let Some(cached_block) = self.cached_block {
@@ -96,8 +97,8 @@ impl MapTrait for CachedSparseBlockMap {
         }
     }
 
-    fn get(&mut self, _wpos: super::GlobalPoint, pos: Position) -> usize {
-        let (room_x, room_y, block_x, block_y, block_index) = Self::get_indices(pos);
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let (room_x, room_y, block_x, block_y, block_index) = Self::get_indices(options.position);
         self.update_cache(room_x, room_y, block_x, block_y);
         
         if let Some(cached_block) = self.cached_block {

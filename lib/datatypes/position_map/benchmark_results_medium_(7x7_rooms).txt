@@ -1,0 +1,61 @@
+Benchmark Results - Medium (7x7 rooms)
+
+=== Spiral Pattern Test ===
+Points: 24500, Room Transitions: 534
+Position Generation: 23.07ms (0.941µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.000      6.21      0.254   +0.0%      5.82      0.238   +0.0%   312.5KB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+YMajorPackedMap         0.000      1.62      0.066  -73.9%      1.58      0.065  -72.8%   312.8KB
+CachedRoomArrayMap      0.000      1.87      0.076  -69.8%      1.83      0.075  -68.6%   312.8KB
+CachedMultiroomMap      0.000      1.96      0.080  -68.4%      1.91      0.078  -67.1%   312.8KB
+DecomposedArray4D       0.000      3.17      0.129  -48.9%      2.60      0.106  -55.3%   259.3KB
+Array4DMap              0.000      3.05      0.125  -50.9%      2.66      0.109  -54.3%   259.3KB
+ChunkedGlobalYMajor     0.000      3.69      0.151  -40.6%      3.77      0.154  -35.2%   512.1KB
+VectorArrayMap          0.000      5.78      0.236   -6.9%      5.63      0.230   -3.2%      464B
+
+ChunkedGlobal           0.000      6.47      0.264   +4.2%      7.19      0.293  +23.4%   512.1KB
+
+
+=== Zigzag Room Transitions Test ===
+Points: 24500, Room Transitions: 24000
+Position Generation: 45.60ms (1.861µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.000      6.33      0.258   +0.0%      5.91      0.241   +0.0%   957.1KB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+DecomposedArray4D       0.000      3.71      0.152  -41.3%      2.65      0.108  -55.2%  1015.8KB
+Array4DMap              0.000      3.64      0.149  -42.5%      2.73      0.111  -53.9%  1015.8KB
+ChunkedGlobalYMajor     0.000      3.81      0.156  -39.8%      3.89      0.159  -34.3%     2.0MB
+VectorArrayMap          0.000      6.29      0.257   -0.7%      5.77      0.235   -2.5%     1.3KB
+YMajorPackedMap         0.000      5.83      0.238   -7.9%      5.78      0.236   -2.2%   957.9KB
+
+CachedRoomArrayMap      0.000      6.13      0.250   -3.2%      6.03      0.246   +2.1%   957.9KB
+CachedMultiroomMap      0.000      6.26      0.255   -1.2%      6.04      0.247   +2.2%   957.6KB
+ChunkedGlobal           0.000      6.70      0.274   +5.8%      7.37      0.301  +24.6%     1.5MB
+
+
+=== Flood Fill Pattern Test ===
+Points: 49000, Room Transitions: 30038
+Position Generation: 132.01ms (2.694µs/pt)
+
+Implementation       Init(ms)   Set(ms)  Set(µs/pt)    Set%   Get(ms)  Get(µs/pt)    Get%     Memory
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+MultiroomDistMap        0.000     12.19      0.249   +0.0%     11.50      0.235   +0.0%   488.3KB
+-------------------- -------- --------- ----------- ------- --------- ----------- ------- ----------
+DecomposedArray4D       0.000      6.33      0.129  -48.1%      5.23      0.107  -54.5%   458.3KB
+Array4DMap              0.000      6.04      0.123  -50.4%      5.31      0.108  -53.8%   458.3KB
+ChunkedGlobalYMajor     0.001      7.79      0.159  -36.1%      7.93      0.162  -31.0%     1.1MB
+YMajorPackedMap         0.000      8.11      0.166  -33.4%      8.13      0.166  -29.3%   488.7KB
+CachedRoomArrayMap      0.000      8.63      0.176  -29.2%      8.59      0.175  -25.3%   488.7KB
+CachedMultiroomMap      0.000      8.91      0.182  -26.9%      8.73      0.178  -24.1%   488.6KB
+VectorArrayMap          0.000     11.45      0.234   -6.0%     11.26      0.230   -2.1%      698B
+
+ChunkedGlobal           0.000     12.97      0.265   +6.4%     14.43      0.295  +25.5%   800.1KB
+
+Note: Set% and Get% show performance relative to MultiroomDistanceMap (+ is slower, - is faster)
+      Times are in milliseconds, per-point times in microseconds
+      Results are sorted by Get time (fastest to slowest)

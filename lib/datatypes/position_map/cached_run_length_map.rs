@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use screeps::{Position, RoomName};
-use super::MapTrait;
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const ROOM_SIZE: usize = 50;
 const ROOM_AREA: usize = ROOM_SIZE * ROOM_SIZE;
@@ -118,8 +119,8 @@ impl MapTrait for CachedRunLengthMap {
         }
     }
 
-    fn set(&mut self, _wpos: super::GlobalPoint, pos: Position, value: usize) {
-        let (room_name, index) = Self::get_indices(pos);
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let (room_name, index) = Self::get_indices(options.position);
         self.update_cache(room_name);
         
         if let Some(cached) = self.cached_room {
@@ -136,8 +137,8 @@ impl MapTrait for CachedRunLengthMap {
         }
     }
 
-    fn get(&mut self, _wpos: super::GlobalPoint, pos: Position) -> usize {
-        let (room_name, index) = Self::get_indices(pos);
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let (room_name, index) = Self::get_indices(options.position);
         self.update_cache(room_name);
         
         if let Some(cached) = self.cached_room {

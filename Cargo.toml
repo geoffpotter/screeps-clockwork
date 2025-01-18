@@ -47,3 +47,8 @@ lto = true
 # --signext-lowering - removes opcodes that the screeps servers can't load (see 
 # https://github.com/rustyscreeps/screeps-game-api/issues/391)
 wasm-opt = ["-O4", "--signext-lowering"]
+
+[[bench]]
+name = "position_benchmarks"
+harness = false
+path = "lib/datatypes/position/benchmark.rs"

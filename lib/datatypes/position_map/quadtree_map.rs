@@ -1,6 +1,7 @@
 use std::collections::HashMap;
-use super::{GlobalPoint, MapTrait};
+use super::{GlobalPoint, MapTrait, PositionOptions};
 use screeps::Position;
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 const MAX_DEPTH: u32 = 8;  // Allows for 2^16 x 2^16 grid which is plenty for global coordinates
 
@@ -48,15 +49,15 @@ impl MapTrait for QuadtreeMap {
         }
     }
 
-    fn set(&mut self, wpos: GlobalPoint, _pos: Position, value: usize) {
+    fn set(&mut self, options: PositionOptions, value: usize) {
         if let Some(root) = &mut self.root {
-            root.set(wpos, value);
+            root.set(options.global_point, value);
         }
     }
 
-    fn get(&mut self, wpos: GlobalPoint, _pos: Position) -> usize {
+    fn get(&mut self, options: PositionOptions) -> usize {
         self.root.as_ref()
-            .and_then(|root| root.get(wpos))
+            .and_then(|root| root.get(options.global_point))
             .unwrap_or(usize::MAX)
     }
 

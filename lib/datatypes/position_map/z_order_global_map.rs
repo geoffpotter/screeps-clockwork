@@ -182,9 +182,9 @@ impl ZOrderGlobalMap {
         
         let room_name = format!("{}{}{}{}",
             if room_x < 0 { "W" } else { "E" },
-            room_x.abs(),
-            if room_y > 0 { "S" } else { "N" },
-            room_y.abs()
+            if room_x == 0 { 0 } else { room_x.abs() },
+            if room_y >= 0 { "S" } else { "N" },
+            if room_y == 0 { 0 } else { room_y.abs() }
         );
         
         (room_name, local_x, local_y)

@@ -1,5 +1,7 @@
-use super::{GlobalPoint, MapTrait};
-use screeps::Position;
+use std::collections::HashMap;
+use screeps::{Position, RoomName};
+use super::{GlobalPoint, MapTrait, PositionOptions};
+use crate::datatypes::position::y_major_packed_position::YMajorPackedPosition;
 
 pub struct RleZOrderMap {
     runs: Vec<Run>,
@@ -120,16 +122,19 @@ impl RleZOrderMap {
 
 impl MapTrait for RleZOrderMap {
     fn new() -> Self {
-        Self::new()
+        Self {
+            runs: Vec::new(),
+            base_value: usize::MAX,
+        }
     }
 
-    fn set(&mut self, _wpos: GlobalPoint, pos: Position, value: usize) {
-        let packed = pos.packed_repr();
+    fn set(&mut self, options: PositionOptions, value: usize) {
+        let packed = options.position.packed_repr();
         let room_x = ((packed >> 24) as i8) as i32;
         let room_y = (((packed >> 16) & 0xFF) as i8) as i32;
         let local_x = ((packed >> 8) & 0xFF) as i32;
         let local_y = (packed & 0xFF) as i32;
-        
+
         let global_x = room_x * 50 + local_x;
         let global_y = room_y * 50 + local_y;
         
@@ -137,8 +142,8 @@ impl MapTrait for RleZOrderMap {
         self.set_value(z, value);
     }
 
-    fn get(&mut self, _wpos: GlobalPoint, pos: Position) -> usize {
-        let packed = pos.packed_repr();
+    fn get(&mut self, options: PositionOptions) -> usize {
+        let packed = options.position.packed_repr();
         let room_x = ((packed >> 24) as i8) as i32;
         let room_y = (((packed >> 16) & 0xFF) as i8) as i32;
         let local_x = ((packed >> 8) & 0xFF) as i32;

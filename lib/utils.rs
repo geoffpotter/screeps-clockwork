@@ -195,7 +195,7 @@ impl Profiler {
         ));
         
         // Data rows
-        for (name, stats) in stats {
+        for (name, stats) in &stats {
             table.push_str(&format!(
                 "| {:<width_name$} | {:>width_count$} | {:>width_total$.2} | {:>width_avg$.4} | {:>width_cpu$.4} | {:>width_calls$.2} |\n",
                 name, stats.count, stats.total_time, stats.avg_time, stats.cpu_per_tick, stats.calls_per_tick,
@@ -208,9 +208,7 @@ impl Profiler {
             ));
         }
 
-        unsafe {
-            log(&table);
-        }
+        log(&table);
     }
 
     pub fn reset(&self) {
