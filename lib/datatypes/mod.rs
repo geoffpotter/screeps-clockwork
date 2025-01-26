@@ -8,7 +8,21 @@ mod multiroom_mono_flow_field;
 mod path;
 mod room_data_cache;
 mod position_map;
-pub mod position;
+mod position;
+mod position_index;
+mod room_index;
+mod local_index;
+mod generic_map;
+mod multiroom_generic_map;
+mod numeric_map;
+mod multiroom_numeric_map;
+
+
+mod map_benchmark;
+
+
+pub use cost_matrix::CustomCostMatrix;
+
 pub use cost_matrix::ClockworkCostMatrix;
 pub use distance_map::DistanceMap;
 pub use multiroom_distance_map::MultiroomDistanceMap;
@@ -18,3 +32,10 @@ pub use path::Path;
 pub use room_data_cache::RoomDataCache;
 pub use position_map::{GlobalPoint, ZOrderGlobalMap, ChunkedZOrderMap, RleZOrderMap};
 pub use position::{fast_position};
+pub use position_index::PositionIndex;
+pub use room_index::RoomIndex;
+pub use local_index::LocalIndex;
+pub use generic_map::GenericMap;
+pub use numeric_map::NumericMap;
+pub use multiroom_generic_map::MultiroomGenericMap;
+pub use multiroom_numeric_map::{MultiroomNumericMap, JsMultiroomNumericMap};

@@ -8,8 +8,10 @@ import {
   jpsPath,
   rust_pathfinder,
   PathfinderResult,
-  jasper_star
+  jasper_star,
+  astar_path
 } from '../../src/index';
+import { CustomCostMatrix, Path } from '../../src/wasm/screeps_clockwork';
 
 import { cpuTime } from '../utils/cpuTime';
 import { FlagVisualizer } from './helpers/FlagVisualizer';
@@ -44,6 +46,8 @@ let avg_cw_time = 0;
 let avg_pf_time = 0;
 
 const cache = new Map<string, ClockworkCostMatrix>();
+
+const cache2 = new Map<string, CustomCostMatrix>();
 export default [
   {
     name: 'A* Multiroom Distance Map',
@@ -207,18 +211,6 @@ export default [
       visualizePath(pathFinderPath!.path, "red");
       cache.clear();
       let clockworkPath: ClockworkPath;
-      // ephemeral(
-      //   jpsPath([from], [to], {
-      //     costMatrixCallback: roomName => {
-      //       if (cache.has(roomName)) {
-      //         return cache.get(roomName);
-      //       }
-      //       const costMatrix = ephemeral(getTerrainCostMatrix(roomName));
-      //       cache.set(roomName, costMatrix);
-      //       return costMatrix;
-      //     }
-      //   })
-      // );
       
       const clockworkTime = cpuTime(() => {
         clockworkPath = ephemeral(
@@ -274,6 +266,89 @@ export default [
       // const pathArray = path.toArray();
       let pathArray = clockworkPath!.toArray();
       visualizePath(pathArray);
+    }
+  },
+  {
+    name: 'A* Path',
+    color1: COLOR_YELLOW,
+    color2: COLOR_PURPLE,
+    run(rooms) {
+      const [originFlag, targetFlag, ...rest] = Object.values(rooms).reduce((acc, flags) => [...acc, ...flags], []);
+      if (!originFlag || !targetFlag) {
+        return;
+      }
+      let from = originFlag.pos;
+      let to = targetFlag.pos;
+      const iterations = 1;
+
+      let pathFinderPath: PathFinderPath;
+      const visitedRooms = new Set<string>();
+      const pathFinderTime = cpuTime(() => {
+        pathFinderPath = PathFinder.search(to, {pos: from, range: 0}, {
+          maxCost: 1500,
+          maxOps: 10000,
+          roomCallback: roomName => {
+            visitedRooms.add(roomName);
+            return new PathFinder.CostMatrix();
+          },
+          heuristicWeight: 1
+        });
+      }, iterations);
+
+      visualizePath(pathFinderPath!.path, "red");
+      cache.clear();
+      let temp_astarPath: ClockworkPath | null = null;
+      
+      const astarTime = cpuTime(() => {
+        temp_astarPath =
+          astar_path(from, to, {
+            maxOps: Game.time % 20 + 1000000,
+            costMatrixCallback: roomName => {
+              // console.log('Getting cost matrix for room in js: ', roomName);
+              if (Game.map.getRoomStatus(roomName).status != "normal") {
+                // console.log('Room not normal', roomName);
+                return;
+              }
+              if (cache2.has(roomName)) {
+                // console.log('Cache hit', roomName);
+                return cache2.get(roomName);
+              }
+              // console.log('Cache miss', roomName);
+              const costMatrix = ephemeral(
+                getTerrainCostMatrix(roomName, { plainCost: 1, swampCost: 5, wallCost: 255 }).toCustomCostMatrix()
+              );
+              // const costMatrix = new CustomCostMatrix();
+              cache2.set(roomName, costMatrix);
+              // console.log('Cost matrix set in cache', roomName, costMatrix);
+              return costMatrix;
+            }
+          });
+          if (!temp_astarPath) {
+            console.log('A* Path not found');
+          }
+      }, iterations);
+      // @ts-ignore
+      let astarPath: ClockworkPath = temp_astarPath;
+      let weight = 0.1;
+      if (avg_cw_time === 0) {
+        avg_cw_time = astarTime * 0.5;
+      }
+      if (avg_pf_time === 0) {
+        avg_pf_time = pathFinderTime * 0.5;
+      }
+      avg_cw_time = (avg_cw_time * (1 - weight)) + (astarTime * weight);
+      avg_pf_time = (avg_pf_time * (1 - weight)) + (pathFinderTime * weight);
+      console.log(`PathFinder Time: ${avg_pf_time.toFixed(2)}, this tick: ${pathFinderTime.toFixed(2)}`);
+      console.log('PathFinder Path', pathFinderPath!.path.length, "rooms opened", visitedRooms.size, "ops", pathFinderPath!.ops);
+
+      let pathArray = astarPath;
+      if (pathArray) {
+        console.log(`A* Time: ${avg_cw_time.toFixed(2)}, this tick: ${astarTime.toFixed(2)}`);
+        console.log('A* Path', astarPath!.length, "rooms opened", cache.size);
+        visualizePath(pathArray.toArray());
+      } else {
+        console.log('A* Path not found');
+      }
     }
   },
   {

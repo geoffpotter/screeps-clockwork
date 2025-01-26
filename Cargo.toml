@@ -17,7 +17,9 @@ log = "0.4"
 fern = "0.7"
 screeps-game-api = "0.22"
 serde = { version = "1.0", features = ["derive"] }
-rand = "0.8"
+rand = { version = "0.8", features = ["getrandom"] }
+getrandom = { version = "0.2", features = ["js"] }
+image = "0.24"
 
 wasm-bindgen = "0.2.84"
 web-sys = { version = "0.3", features = ["console"] }
@@ -32,6 +34,7 @@ screeps-game-utils = "0.22.1"
 lazy_static = "1.5.0"
 rustc-hash = "2.1.0"
 plotters = "0.3.7"
+num-traits = "0.2"
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.
@@ -47,8 +50,3 @@ lto = true
 # --signext-lowering - removes opcodes that the screeps servers can't load (see 
 # https://github.com/rustyscreeps/screeps-game-api/issues/391)
 wasm-opt = ["-O4", "--signext-lowering"]
-
-[[bench]]
-name = "position_benchmarks"
-harness = false
-path = "lib/datatypes/position/benchmark.rs"

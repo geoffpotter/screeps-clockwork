@@ -20,7 +20,7 @@ mod sparse_block_map;
 mod vector_array_map;
 mod z_order_global_map;
 mod y_major_packed_map;
-mod benchmark;
+// mod benchmark;
 
 // New implementations
 mod decomposed_array_4d_map;

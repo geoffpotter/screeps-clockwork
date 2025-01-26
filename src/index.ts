@@ -28,6 +28,7 @@ export * from './wrappers/rustPathFinder';
 export { rust_pathfinder } from './wrappers/rustPathFinder';
 export { jasper_star } from './wrappers/jasperStar';
 export type { PathfinderResult } from './wrappers/rustPathFinder';
+export { astar_path } from './wrappers/astarPath';
 
 declare namespace WebAssembly {
   class Module {
