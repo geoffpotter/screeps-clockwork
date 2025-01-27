@@ -290,7 +290,7 @@ pub fn js_pathfinder(origin: u32, goals: Vec<u32>) -> Vec<u32> {
                 Goal::new(WorldPosition::from(pos), 0)
             })
             .collect();
-        log(&format!("Rust Pathfinder setup: {}", game::cpu::get_used() - start).to_string());
+        // log(&format!("Rust Pathfinder setup: {}", game::cpu::get_used() - start).to_string());
         let start = game::cpu::get_used();
         let options = PathfindingOptions {
             plain_cost: 1,

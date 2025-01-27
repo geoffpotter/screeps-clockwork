@@ -522,6 +522,7 @@ mod tests {
                 let packed = room.packed_repr();
                 let x = (packed >> 8) as u8;
                 let y = packed as u8;
+                println!("{} -> ({}, {})", name, x, y);
             }
         }
     }

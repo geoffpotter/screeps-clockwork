@@ -546,10 +546,10 @@ impl PathFinder {
 
         self.in_use = false;
 
-        log(&format!(
-            "Rust Pathfinder visited rooms: {:?}",
-            self.room_table.len()
-        ));
+        // log(&format!(
+        //     "Rust Pathfinder visited rooms: {:?}",
+        //     self.room_table.len()
+        // ));
 
         Ok(PathfindingResult::new(
             path,
