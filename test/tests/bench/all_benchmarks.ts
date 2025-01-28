@@ -337,26 +337,26 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
         //     }
         // },
 
-        {
-            name: "Bidirectional A*",
-            fn({ origins, goals }) {
-                // @ts-ignore
-                const startPacked = new Uint32Array([origins[0].__packedPos]);
-                // @ts-ignore
-                const goalPacked = new Uint32Array([goals[0].__packedPos]);
-                let path = js_bidirectional_astar_path(
-                    startPacked[0],
-                    goalPacked[0],
-                    getTerrainCostMatrix,
-                    10000,
-                    50
-                );
-                if (path) {
-                    return path.to_array();
-                }
-                return [];
-            }
-        },
+        // {
+        //     name: "Bidirectional A*",
+        //     fn({ origins, goals }) {
+        //         // @ts-ignore
+        //         const startPacked = new Uint32Array([origins[0].__packedPos]);
+        //         // @ts-ignore
+        //         const goalPacked = new Uint32Array([goals[0].__packedPos]);
+        //         let path = js_bidirectional_astar_path(
+        //             startPacked[0],
+        //             goalPacked[0],
+        //             getTerrainCostMatrix,
+        //             10000,
+        //             50
+        //         );
+        //         if (path) {
+        //             return path.to_array();
+        //         }
+        //         return [];
+        //     }
+        // },
         {
             name: "Theta*",
             fn({ origins, goals }) {

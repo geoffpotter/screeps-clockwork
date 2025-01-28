@@ -2,8 +2,6 @@ use std::collections::{BinaryHeap, HashMap};
 use screeps::constants::extra::ROOM_SIZE;
 use super::terrain::{RoomTerrain, WorldMap};
 
-const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
-
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct Node {
     room_x: i32,
@@ -11,6 +9,7 @@ struct Node {
     x: u8,
     y: u8,
     f_score: usize,
+    g_score: usize,
 }
 
 // For the priority queue
@@ -27,45 +26,21 @@ impl PartialOrd for Node {
     }
 }
 
-// Working data for pathfinding that can be either on stack or heap
-struct PathFindingData {
-    g_scores: HashMap<(i32, i32, u8, u8), usize>,
-    came_from: HashMap<(i32, i32, u8, u8), (i32, i32, u8, u8)>,
-}
-
-impl PathFindingData {
-    fn new() -> Self {
-        Self {
-            g_scores: HashMap::new(),
-            came_from: HashMap::new(),
-        }
-    }
-
-    fn reset(&mut self) {
-        self.g_scores.clear();
-        self.came_from.clear();
-    }
-}
-
-// Stack-based pathfinder
-pub struct StackPathFinder {
-    open_set: BinaryHeap<Node>,
-    working_data: PathFindingData,
+pub struct PathFinder {
     world: WorldMap,
 }
 
-// Heap-based pathfinder
-pub struct HeapPathFinder {
-    open_set: BinaryHeap<Node>,
-    working_data: Box<PathFindingData>,
-    world: WorldMap,
-}
+impl PathFinder {
+    pub fn new(world: WorldMap) -> Self {
+        Self { world }
+    }
 
-// Common functionality for both pathfinders
-pub trait PathFinding {
-    fn get_working_data(&mut self) -> &mut PathFindingData;
-    fn get_world(&self) -> &WorldMap;
-    fn get_open_set(&mut self) -> &mut BinaryHeap<Node>;
+    fn heuristic(room_x1: i32, room_y1: i32, x1: u8, y1: u8, room_x2: i32, room_y2: i32, x2: u8, y2: u8) -> usize {
+        // Chebyshev distance across rooms
+        let dx = ((room_x2 - room_x1) * ROOM_SIZE as i32 + (x2 as i32 - x1 as i32)).abs() as usize;
+        let dy = ((room_y2 - room_y1) * ROOM_SIZE as i32 + (y2 as i32 - y1 as i32)).abs() as usize;
+        dx.max(dy)
+    }
 
     fn get_neighbors(&self, room_x: i32, room_y: i32, x: u8, y: u8) -> Vec<(i32, i32, u8, u8)> {
         let mut neighbors = Vec::with_capacity(8);
@@ -93,7 +68,7 @@ pub trait PathFinding {
             }
 
             // Check if the room exists and the position is walkable
-            if let Some(room) = self.get_world().get_room(new_room_x, new_room_y) {
+            if let Some(room) = self.world.get_room(new_room_x, new_room_y) {
                 if room.is_walkable(new_x as u8, new_y as u8) {
                     neighbors.push((new_room_x, new_room_y, new_x as u8, new_y as u8));
                 }
@@ -102,41 +77,41 @@ pub trait PathFinding {
         neighbors
     }
 
-    fn heuristic(room_x1: i32, room_y1: i32, x1: u8, y1: u8, room_x2: i32, room_y2: i32, x2: u8, y2: u8) -> usize {
-        // Chebyshev distance across rooms
-        let dx = ((room_x2 - room_x1) * ROOM_SIZE as i32 + (x2 as i32 - x1 as i32)).abs() as usize;
-        let dy = ((room_y2 - room_y1) * ROOM_SIZE as i32 + (y2 as i32 - y1 as i32)).abs() as usize;
-        dx.max(dy)
-    }
-
-    fn find_path_multiroom(
-        &mut self,
-        start_room_x: i32, start_room_y: i32, start_x: u8, start_y: u8,
-        goal_room_x: i32, goal_room_y: i32, goal_x: u8, goal_y: u8
+    pub fn find_path_multiroom(
+        &self,
+        start_room_x: i32, 
+        start_room_y: i32, 
+        start_x: u8, 
+        start_y: u8,
+        goal_room_x: i32, 
+        goal_room_y: i32, 
+        goal_x: u8, 
+        goal_y: u8
     ) -> Option<Vec<(i32, i32, u8, u8)>> {
-        // Reset state
-        self.get_open_set().clear();
-        self.get_working_data().reset();
+        let mut open_set = BinaryHeap::new();
+        let mut g_scores = HashMap::new();
+        let mut came_from = HashMap::new();
 
         // Initialize start
         let start_pos = (start_room_x, start_room_y, start_x, start_y);
-        self.get_working_data().g_scores.insert(start_pos, 0);
-        self.get_open_set().push(Node {
+        g_scores.insert(start_pos, 0);
+        open_set.push(Node {
             room_x: start_room_x,
             room_y: start_room_y,
             x: start_x,
             y: start_y,
             f_score: Self::heuristic(start_room_x, start_room_y, start_x, start_y, goal_room_x, goal_room_y, goal_x, goal_y),
+            g_score: 0,
         });
 
-        while let Some(current) = self.get_open_set().pop() {
+        while let Some(current) = open_set.pop() {
             let current_pos = (current.room_x, current.room_y, current.x, current.y);
             
             if current_pos == (goal_room_x, goal_room_y, goal_x, goal_y) {
                 // Reconstruct path
                 let mut path = Vec::new();
                 let mut current = current_pos;
-                while let Some(&prev) = self.get_working_data().came_from.get(&current) {
+                while let Some(&prev) = came_from.get(&current) {
                     path.push(current);
                     current = prev;
                 }
@@ -145,24 +120,25 @@ pub trait PathFinding {
                 return Some(path);
             }
 
-            let current_g = self.get_working_data().g_scores[&current_pos];
+            let current_g = g_scores[&current_pos];
 
             for neighbor_pos in self.get_neighbors(current.room_x, current.room_y, current.x, current.y) {
                 let tentative_g = current_g + 1;
 
-                if tentative_g < *self.get_working_data().g_scores.get(&neighbor_pos).unwrap_or(&usize::MAX) {
-                    self.get_working_data().came_from.insert(neighbor_pos, current_pos);
-                    self.get_working_data().g_scores.insert(neighbor_pos, tentative_g);
+                if tentative_g < *g_scores.get(&neighbor_pos).unwrap_or(&usize::MAX) {
+                    came_from.insert(neighbor_pos, current_pos);
+                    g_scores.insert(neighbor_pos, tentative_g);
                     let f_score = tentative_g + Self::heuristic(
                         neighbor_pos.0, neighbor_pos.1, neighbor_pos.2, neighbor_pos.3,
                         goal_room_x, goal_room_y, goal_x, goal_y
                     );
-                    self.get_open_set().push(Node {
+                    open_set.push(Node {
                         room_x: neighbor_pos.0,
                         room_y: neighbor_pos.1,
                         x: neighbor_pos.2,
                         y: neighbor_pos.3,
                         f_score,
+                        g_score: tentative_g,
                     });
                 }
             }
@@ -172,88 +148,78 @@ pub trait PathFinding {
     }
 }
 
-impl StackPathFinder {
-    pub fn new(world: WorldMap) -> Self {
-        Self {
-            open_set: BinaryHeap::new(),
-            working_data: PathFindingData::new(),
-            world,
-        }
-    }
-}
-
-impl HeapPathFinder {
-    pub fn new(world: WorldMap) -> Self {
-        Self {
-            open_set: BinaryHeap::new(),
-            working_data: Box::new(PathFindingData::new()),
-            world,
-        }
-    }
-}
-
-impl PathFinding for StackPathFinder {
-    fn get_working_data(&mut self) -> &mut PathFindingData {
-        &mut self.working_data
-    }
-
-    fn get_world(&self) -> &WorldMap {
-        &self.world
-    }
-
-    fn get_open_set(&mut self) -> &mut BinaryHeap<Node> {
-        &mut self.open_set
-    }
-}
-
-impl PathFinding for HeapPathFinder {
-    fn get_working_data(&mut self) -> &mut PathFindingData {
-        &mut self.working_data
-    }
-
-    fn get_world(&self) -> &WorldMap {
-        &self.world
-    }
-
-    fn get_open_set(&mut self) -> &mut BinaryHeap<Node> {
-        &mut self.open_set
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_pathfinder_implementation<T: PathFinding>(mut pathfinder: T) {
-        let path = pathfinder.find_path_multiroom(0, 0, 0, 0, 0, 0, 3, 3).unwrap();
-        assert_eq!(path.first(), Some(&(0, 0, 0, 0)));
-        assert_eq!(path.last(), Some(&(0, 0, 3, 3)));
-    }
+    use screeps::constants::extra::ROOM_SIZE;
 
     #[test]
-    fn test_stack_pathfinder() {
-        let mut world = WorldMap::new();
-        world.generate_screeps_like_terrain(0, 0);
-        let pathfinder = StackPathFinder::new(world);
-        test_pathfinder_implementation(pathfinder);
-    }
-
-    #[test]
-    fn test_heap_pathfinder() {
-        let mut world = WorldMap::new();
-        world.generate_screeps_like_terrain(0, 0);
-        let pathfinder = HeapPathFinder::new(world);
-        test_pathfinder_implementation(pathfinder);
-    }
-
-    #[test]
-    fn test_wall_avoidance() {
-        let mut world = WorldMap::new();
-        world.generate_screeps_like_terrain(0, 0);
-        world.get_or_create_room(0, 0).set_wall(1, 1);
-        let mut pathfinder = StackPathFinder::new(world);
+    fn test_pathfinder_basic() {
+        let mut world_map = WorldMap::new();
+        let mut room = RoomTerrain::new();
         
-        let path = pathfinder.find_path_multiroom(0, 0, 0, 0, 0, 0, 2, 2).unwrap();
-        assert!(!path.contains(&(0, 0, 1, 1)));
+        // Create a simple walkable room
+        for x in 0..ROOM_SIZE {
+            for y in 0..ROOM_SIZE {
+                room.set_walkable(x, y, true);
+            }
+        }
+        
+        world_map.add_room(0, 0, room);
+        
+        let pathfinder = PathFinder::new(world_map);
+        
+        // Test a simple path within the same room
+        let path = pathfinder.find_path_multiroom(
+            0, 0, 10, 10,  // start
+            0, 0, 20, 20   // goal
+        );
+        
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert!(path.len() > 0);
+        assert_eq!(path[0], (0, 0, 10, 10));
+        assert_eq!(path[path.len() - 1], (0, 0, 20, 20));
     }
-} 
+
+    #[test]
+    fn test_pathfinder_wall_avoidance() {
+        let mut world_map = WorldMap::new();
+        let mut room = RoomTerrain::new();
+        
+        // Create a room with walls blocking direct path
+        for x in 0..ROOM_SIZE {
+            for y in 0..ROOM_SIZE {
+                room.set_walkable(x, y, true);
+            }
+        }
+        
+        // Create a wall-like barrier
+        for x in 15..25 {
+            for y in 15..25 {
+                room.set_walkable(x, y, false);
+            }
+        }
+        
+        world_map.add_room(0, 0, room);
+        
+        let pathfinder = PathFinder::new(world_map);
+        
+        // Test path around the wall
+        let path = pathfinder.find_path_multiroom(
+            0, 0, 10, 10,  // start
+            0, 0, 30, 30   // goal
+        );
+        
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert!(path.len() > 0);
+        assert_eq!(path[0], (0, 0, 10, 10));
+        assert_eq!(path[path.len() - 1], (0, 0, 30, 30));
+        
+        // Ensure the path does not go through the wall
+        for (_, _, x, y) in &path[1..path.len()-1] {
+            assert!(!(15 <= *x && *x < 25 && 15 <= *y && *y < 25), "Path went through wall");
+        }
+    }
+}

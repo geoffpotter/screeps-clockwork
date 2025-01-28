@@ -107,7 +107,7 @@ export class Benchmark<ResultT, ArgsT> {
             }
             console.log("between implementations", nextImpl);
             this.betweenImplementations();
-            this.currentImpl = nextImpl || '';
+            this.currentImpl = nextImpl || 'wtf';
             this.iterationsCompleted = 0;
             this.currentResults = [];
             this.totalCpuUsed = 0;

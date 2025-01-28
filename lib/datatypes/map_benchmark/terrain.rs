@@ -1,7 +1,7 @@
 use screeps::constants::extra::ROOM_SIZE;
 use rand::Rng;
 use rand::seq::SliceRandom;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 
@@ -56,6 +56,14 @@ impl RoomTerrain {
         self.terrain[Self::get_index(x, y)] = TerrainType::Swamp;
     }
 
+    pub fn set_walkable(&mut self, x: u8, y: u8, walkable: bool) {
+        if walkable {
+            self.terrain[Self::get_index(x, y)] = TerrainType::Plain;
+        } else {
+            self.terrain[Self::get_index(x, y)] = TerrainType::Wall;
+        }
+    }
+
     fn get_index(x: u8, y: u8) -> usize {
         (y as usize) * (ROOM_SIZE as usize) + (x as usize)
     }
@@ -77,13 +85,13 @@ impl Default for RoomTerrain {
 
 #[derive(Clone)]
 pub struct WorldMap {
-    rooms: std::collections::HashMap<(i32, i32), RoomTerrain>,
+    rooms: HashMap<(i32, i32), RoomTerrain>,
 }
 
 impl WorldMap {
     pub fn new() -> Self {
         Self {
-            rooms: std::collections::HashMap::new(),
+            rooms: HashMap::new(),
         }
     }
 
@@ -93,6 +101,10 @@ impl WorldMap {
 
     pub fn get_room(&self, room_x: i32, room_y: i32) -> Option<&RoomTerrain> {
         self.rooms.get(&(room_x, room_y))
+    }
+
+    pub fn add_room(&mut self, room_x: i32, room_y: i32, room: RoomTerrain) {
+        self.rooms.insert((room_x, room_y), room);
     }
 
     pub fn generate_screeps_like_terrain(&mut self, room_x: i32, room_y: i32) {
@@ -232,4 +244,4 @@ mod tests {
         assert_eq!(terrain.get(0, 0), TerrainType::Plain);
         assert!(terrain.is_walkable(0, 0));
     }
-} 
+}
