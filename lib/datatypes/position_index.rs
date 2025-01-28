@@ -74,7 +74,7 @@ impl PositionIndex {
                 Direction::Bottom => RoomIndex::new(room_x, room_y.wrapping_sub(1)),  // Going south decreases Y
                 _ => unreachable!()
             };
-            let (new_room_x, new_room_y) = new_room.room_xy();
+            // let (new_room_x, new_room_y) = new_room.room_xy();
             
             // Calculate new local position
             let new_local = match dir {
@@ -108,7 +108,7 @@ impl PositionIndex {
                 Direction::BottomLeft => RoomIndex::new(room_x.wrapping_sub(1), room_y.wrapping_sub(1)),
                 _ => unreachable!()
             };
-            let (new_room_x, new_room_y) = new_room.room_xy();
+            // let (new_room_x, new_room_y) = new_room.room_xy();
            
             
             // Calculate new local position
@@ -251,7 +251,7 @@ impl From<PositionIndex> for Position {
 
 #[cfg(test)]
 mod tests {
-    use crate::datatypes::room_index;
+
 
     use super::*;
 

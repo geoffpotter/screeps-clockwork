@@ -43,6 +43,10 @@ impl Path {
         self.0.len()
     }
 
+    pub fn into_iter(self) -> impl Iterator<Item = Position> {
+        self.0.into_iter()
+    }
+
     /// Given a position, find the index of the next adjacent position
     /// in the path. If the position is not in the path, the target is
     /// the next adjacent position closest to the end of the path. If
