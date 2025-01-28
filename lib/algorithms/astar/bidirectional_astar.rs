@@ -1,9 +1,10 @@
 use crate::datatypes::{CustomCostMatrix, Path, PositionIndex};
-use screeps::{Direction, Position, RoomName};
+use screeps::{Direction, Position, RoomName, RoomXY};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsValue;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct State {
@@ -38,32 +39,33 @@ pub fn js_bidirectional_astar_path(
     let start_idx = PositionIndex::from(start);
     let goal_idx = PositionIndex::from(goal);
 
-    let get_cost_matrix = |room_name: RoomName| {
-        let result = get_cost_matrix.call1(
-            &JsValue::null(),
-            &JsValue::from_f64(room_name.packed_repr() as f64),
-        );
-
-        let value = match result {
-            Ok(value) => value,
-            Err(e) => throw_val(e),
-        };
-
-        if value.is_undefined() {
-            None
-        } else {
-            CustomCostMatrix::try_from(value).ok()
-        }
-    };
-
     bidirectional_astar_path(
         start_idx,
         goal_idx,
-        get_cost_matrix,
+        move |room_name: RoomName| {
+            let js_room_name = JsValue::from_str(&room_name.to_string());
+            let result = get_cost_matrix.call1(
+                &JsValue::NULL,
+                &js_room_name,
+            );
+            match result {
+                Ok(value) => {
+                    if value.is_undefined() {
+                        None
+                    } else {
+                        CustomCostMatrix::try_from(value).ok()
+                    }
+                }
+                Err(_) => None,
+            }
+        },
         max_ops as usize,
         max_rooms as usize,
     )
-    .map(Path::new)
+    .map(|positions| {
+        let positions: Vec<Position> = positions.into_iter().map(|p| p.into()).collect();
+        Path::from(positions)
+    })
 }
 
 fn bidirectional_astar_path(
@@ -133,33 +135,38 @@ fn bidirectional_astar_path(
                 }
             };
 
-            for dir in Direction::ALL.iter() {
-                if let Some(next_pos) = pos.offset_by_direction(*dir) {
+            let mut current_cost_matrix = &cost_matrix;
+            
+            // Get all valid neighbors
+            let directions = [
+                Direction::Top,
+                Direction::TopRight,
+                Direction::Right,
+                Direction::BottomRight,
+                Direction::Bottom,
+                Direction::BottomLeft,
+                Direction::Left,
+                Direction::TopLeft,
+            ];
+            
+            for dir in directions.iter() {
+                if let Some(next_pos) = pos.r#move(*dir) {
                     let next_room = next_pos.room_name();
                     if next_room != room {
                         if cost_matrices.len() >= max_rooms {
                             continue;
                         }
-                    }
-
-                    let cost = if next_room == room {
-                        cost_matrix.get_pos_cost(&next_pos)
-                    } else {
-                        match cost_matrices.entry(next_room) {
-                            std::collections::hash_map::Entry::Occupied(entry) => {
-                                entry.get().get_pos_cost(&next_pos)
-                            }
-                            std::collections::hash_map::Entry::Vacant(entry) => {
-                                if let Some(matrix) = get_cost_matrix(next_room) {
-                                    entry.insert(matrix.clone());
-                                    entry.get().get_pos_cost(&next_pos)
-                                } else {
-                                    continue;
-                                }
+                        if !cost_matrices.contains_key(&next_room) {
+                            if let Some(cost_matrix) = get_cost_matrix(next_room) {
+                                cost_matrices.insert(next_room, cost_matrix);
+                            } else {
+                                continue;
                             }
                         }
-                    };
+                        current_cost_matrix = cost_matrices.get(&next_room).unwrap();
+                    }
 
+                    let cost = current_cost_matrix.get(RoomXY::new(next_pos.x(), next_pos.y()));
                     if cost == 255 {
                         continue;
                     }
@@ -209,33 +216,38 @@ fn bidirectional_astar_path(
                 }
             };
 
-            for dir in Direction::ALL.iter() {
-                if let Some(next_pos) = pos.offset_by_direction(*dir) {
+            let mut current_cost_matrix = &cost_matrix;
+            
+            // Get all valid neighbors
+            let directions = [
+                Direction::Top,
+                Direction::TopRight,
+                Direction::Right,
+                Direction::BottomRight,
+                Direction::Bottom,
+                Direction::BottomLeft,
+                Direction::Left,
+                Direction::TopLeft,
+            ];
+            
+            for dir in directions.iter() {
+                if let Some(next_pos) = pos.r#move(*dir) {
                     let next_room = next_pos.room_name();
                     if next_room != room {
                         if cost_matrices.len() >= max_rooms {
                             continue;
                         }
-                    }
-
-                    let cost = if next_room == room {
-                        cost_matrix.get_pos_cost(&next_pos)
-                    } else {
-                        match cost_matrices.entry(next_room) {
-                            std::collections::hash_map::Entry::Occupied(entry) => {
-                                entry.get().get_pos_cost(&next_pos)
-                            }
-                            std::collections::hash_map::Entry::Vacant(entry) => {
-                                if let Some(matrix) = get_cost_matrix(next_room) {
-                                    entry.insert(matrix.clone());
-                                    entry.get().get_pos_cost(&next_pos)
-                                } else {
-                                    continue;
-                                }
+                        if !cost_matrices.contains_key(&next_room) {
+                            if let Some(cost_matrix) = get_cost_matrix(next_room) {
+                                cost_matrices.insert(next_room, cost_matrix);
+                            } else {
+                                continue;
                             }
                         }
-                    };
+                        current_cost_matrix = cost_matrices.get(&next_room).unwrap();
+                    }
 
+                    let cost = current_cost_matrix.get(RoomXY::new(next_pos.x(), next_pos.y()));
                     if cost == 255 {
                         continue;
                     }

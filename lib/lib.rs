@@ -12,6 +12,13 @@ extern "C" {
     fn log(s: &str);
 }
 
+#[macro_export]
+macro_rules! log {
+    ($($arg:tt)*) => {
+        log(&format!($($arg)*))
+    }
+}
+
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

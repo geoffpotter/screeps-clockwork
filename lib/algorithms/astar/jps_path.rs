@@ -248,11 +248,11 @@ pub fn jps_multiroom_distance_map(
                 }
 
                 metrics.neighbor_checks += 1;
-                let first_step = match position.checked_add_direction(*direction) {
+                let first_step = match unsafe { position.checked_add_direction(*direction) } {
                     Ok(pos) => pos,
                     Err(_) => {
                         if profiling_enabled {
-                            profiler.end_call("direction_processing");
+                            unsafe { profiler.end_call("direction_processing") };
                         }
                         log(&format!("failed direction_processing: {:?}", direction));
                         continue;
@@ -270,7 +270,7 @@ pub fn jps_multiroom_distance_map(
                     {
                     // Impassable
                     if profiling_enabled {
-                        profiler.end_call("direction_processing");
+                        unsafe { profiler.end_call("direction_processing") };
                     }
                     continue;
                 }
@@ -284,8 +284,8 @@ pub fn jps_multiroom_distance_map(
                     // Check if the jumped-to position is a wall
                     if cost_cache.look(WorldPosition::from(neighbor)) == OBSTACLE {
                         if profiling_enabled {
-                            profiler.end_call("jump");
-                            profiler.end_call("direction_processing");
+                            unsafe { profiler.end_call("jump") };
+                            unsafe { profiler.end_call("direction_processing") };
                         }
                         continue;
                     }
@@ -297,8 +297,8 @@ pub fn jps_multiroom_distance_map(
                     // If jump returns same position, skip
                     if neighbor.is_equal_to(position) {
                         if profiling_enabled {
-                            profiler.end_call("jump handling");
-                            profiler.end_call("direction_processing");
+                            unsafe { profiler.end_call("jump handling") };
+                            unsafe { profiler.end_call("direction_processing") };
                         }
                         continue;
                     }
@@ -353,9 +353,9 @@ pub fn jps_multiroom_distance_map(
                     let terrain_cost = cost_cache.look(WorldPosition::from(neighbor));
                     if terrain_cost == OBSTACLE {
                         if profiling_enabled {
-                            profiler.end_call("add_to_frontier");
-                            profiler.end_call("jump handling");
-                            profiler.end_call("direction_processing");
+                            unsafe { profiler.end_call("add_to_frontier") };
+                            unsafe { profiler.end_call("jump handling") };
+                            unsafe { profiler.end_call("direction_processing") };
                         }
                         continue;
                     }
@@ -364,9 +364,9 @@ pub fn jps_multiroom_distance_map(
 
                     if current_room_distance_map[neighbor.xy()] <= next_cost {
                         if profiling_enabled {
-                            profiler.end_call("add_to_frontier");
-                            profiler.end_call("jump handling");
-                            profiler.end_call("direction_processing");
+                            unsafe { profiler.end_call("add_to_frontier") };
+                            unsafe { profiler.end_call("jump handling") };
+                            unsafe { profiler.end_call("direction_processing") };
                         }
                         if ENABLE_VISUALIZATION {
                             let viz = RoomVisual::new(Some(position.room_name()));
@@ -455,10 +455,10 @@ pub fn jps_multiroom_distance_map(
     }
 
     // No more frontier...
-    log(&format!("{:?}", metrics));
+    unsafe { log(&format!("{:?}", metrics)) };
 
     if profiling_enabled {
-        profiler.end_call("jps_multiroom_distance_map");
+        unsafe { profiler.end_call("jps_multiroom_distance_map") };
         profiler.print_results();
     }
     multiroom_distance_map

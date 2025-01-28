@@ -3,7 +3,21 @@ import { toRoomPosition } from "./positions";
 import { drawPath, PathfindingBenchmarkArgs } from "./paths";
 import { getBenchmarkPositions } from "./positions";
 import { ClockworkPath, ephemeral, getTerrainCostMatrix, rust_pathfinder } from "../../../src";
-import { js_astar_multiroom_distance_map2, js_astar_multiroom_path2, js_astar_multiroom_path3, js_astar_path, js_astar_path_heap, js_astar_path_numeric, js_astar_path_standard, js_path_to_multiroom_distance_map_origin } from "../../../src/wasm/screeps_clockwork";
+import { 
+    js_astar_multiroom_distance_map2, 
+    js_astar_multiroom_path2, 
+    js_astar_multiroom_path3, 
+    js_astar_path, 
+    js_astar_path_heap, 
+    js_astar_path_numeric, 
+    js_astar_path_standard,
+    js_path_to_multiroom_distance_map_origin,
+    js_bidirectional_astar_path,
+    js_theta_star_path,
+    js_lazy_theta_star_path,
+    js_dstar_lite_path,
+    js_contraction_hierarchies_path
+} from "../../../src/wasm/screeps_clockwork";
 import { fromPackedRoomName } from "../../../src/utils/fromPacked";
 import { js_astar_multiroom_distance_map } from "../../../src/wasm/screeps_clockwork";
 import { referenceGetRange } from "../referenceAlgorithms/getRange";
@@ -338,7 +352,7 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                     50
                 );
                 if (path) {
-                    return drawPath(path);
+                    return path.to_array();
                 }
                 return [];
             }
@@ -354,11 +368,10 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                     startPacked[0],
                     goalPacked[0],
                     getTerrainCostMatrix,
-                    10000,
-                    50
+                    10000
                 );
                 if (path) {
-                    return drawPath(path);
+                    return path.to_array();
                 }
                 return [];
             }
@@ -374,11 +387,10 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                     startPacked[0],
                     goalPacked[0],
                     getTerrainCostMatrix,
-                    10000,
-                    50
+                    10000
                 );
                 if (path) {
-                    return drawPath(path);
+                    return path.to_array();
                 }
                 return [];
             }
@@ -388,9 +400,11 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
             fn({ origins, goals }) {
                 let origin = origins[0];
                 let goal = goals[0];
-                let start = ephemeral.wasm.pack_position(origin);
-                let end = ephemeral.wasm.pack_position(goal);
-                let path = ephemeral.wasm.js_dstar_lite_path(
+                // @ts-ignore
+                let start = origin.__packedPos;
+                // @ts-ignore
+                let end = goal.__packedPos;
+                let path = js_dstar_lite_path(
                     start,
                     end,
                     getTerrainCostMatrix,
@@ -398,7 +412,7 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                     50
                 );
                 if (path) {
-                    return drawPath(path);
+                    return path.to_array();
                 }
                 return [];
             }
@@ -408,9 +422,11 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
             fn({ origins, goals }) {
                 let origin = origins[0];
                 let goal = goals[0];
-                let start = ephemeral.wasm.pack_position(origin);
-                let end = ephemeral.wasm.pack_position(goal);
-                let path = ephemeral.wasm.js_contraction_hierarchies_path(
+                // @ts-ignore
+                let start = origin.__packedPos;
+                // @ts-ignore
+                let end = goal.__packedPos;
+                let path = js_contraction_hierarchies_path(
                     start,
                     end,
                     getTerrainCostMatrix,
@@ -418,7 +434,7 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                     50
                 );
                 if (path) {
-                    return drawPath(path);
+                    return path.to_array();
                 }
                 return [];
             }

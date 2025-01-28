@@ -1,11 +1,10 @@
 use crate::datatypes::{
-    ClockworkCostMatrix, CustomCostMatrix, LocalIndex, MultiroomGenericMap, OptionalCache, PositionIndex, RoomIndex, Path
+    CustomCostMatrix, PositionIndex, Path
 };
-use crate::log;
-use lazy_static::lazy_static;
-use screeps::{Direction, RoomName};
+use screeps::{Direction, RoomName, Position};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use js_sys::Function;
 
@@ -30,30 +29,46 @@ impl PartialOrd for Key {
     }
 }
 
-#[derive(Copy, Clone)]
-struct State {
-    g: usize,
-    rhs: usize,
-    key: Key,
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct QueueState {
+    k: Key,
+    pos: PositionIndex,
 }
 
-impl Default for State {
+impl Ord for QueueState {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse ordering for max-heap to act as min-heap
+        other.k.cmp(&self.k)
+    }
+}
+
+impl PartialOrd for QueueState {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Copy, Clone)]
+struct NodeState {
+    g: usize,
+    rhs: usize,
+}
+
+impl Default for NodeState {
     fn default() -> Self {
         Self {
             g: usize::MAX,
             rhs: usize::MAX,
-            key: Key { k1: 0, k2: 0 },
         }
     }
 }
 
 struct DStarLite {
-    states: HashMap<PositionIndex, State>,
-    queue: BinaryHeap<(Key, PositionIndex)>,
+    states: HashMap<PositionIndex, NodeState>,
+    queue: BinaryHeap<QueueState>,
     k_m: usize,
     start: PositionIndex,
     goal: PositionIndex,
-    last_pos: PositionIndex,
 }
 
 impl DStarLite {
@@ -64,33 +79,33 @@ impl DStarLite {
             k_m: 0,
             start,
             goal,
-            last_pos: start,
         };
         
-        dstar.states.insert(goal, State {
-            g: usize::MAX,
-            rhs: 0,
-            key: Key { k1: 0, k2: 0 },
-        });
+        let mut goal_state = NodeState::default();
+        goal_state.rhs = 0;
+        dstar.states.insert(goal, goal_state);
         
-        dstar.queue.push((
-            dstar.calculate_key(goal),
-            goal
-        ));
+        let key = dstar.calculate_key(goal);
+        dstar.queue.push(QueueState { pos: goal, k: key });
         
         dstar
     }
     
     fn heuristic(&self, pos: PositionIndex) -> usize {
-        let dx = (pos.room.x as i32 - self.start.room.x as i32).abs() as usize * 50 +
-                (pos.local.x as i32 - self.start.local.x as i32).abs() as usize;
-        let dy = (pos.room.y as i32 - self.start.room.y as i32).abs() as usize * 50 +
-                (pos.local.y as i32 - self.start.local.y as i32).abs() as usize;
-        dx.max(dy)
+        // Manhattan distance between rooms plus Manhattan distance within room
+        let (start_x, start_y) = pos.room().room_xy();
+        let (goal_x, goal_y) = self.goal.room().room_xy();
+        let room_distance = ((start_x as i32 - goal_x as i32).abs() + 
+                           (start_y as i32 - goal_y as i32).abs()) as usize;
+        
+        let local_distance = ((pos.local().x() as i32 - self.goal.local().x() as i32).abs() +
+                            (pos.local().y() as i32 - self.goal.local().y() as i32).abs()) as usize;
+        
+        room_distance * 50 + local_distance
     }
     
     fn calculate_key(&self, pos: PositionIndex) -> Key {
-        let state = self.states.get(&pos).unwrap_or(&State::default());
+        let state = self.states.get(&pos).copied().unwrap_or_default();
         let min_g_rhs = state.g.min(state.rhs);
         Key {
             k1: min_g_rhs + self.heuristic(pos) + self.k_m,
@@ -101,25 +116,33 @@ impl DStarLite {
     fn update_vertex(&mut self, pos: PositionIndex, get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>) {
         if pos != self.goal {
             let mut min_rhs = usize::MAX;
-            for direction in Direction::all() {
-                if let Some(next) = pos.step(direction) {
-                    if let Some(cost_matrix) = get_cost_matrix(next.room.to_room_name()) {
-                        let cost = cost_matrix.get_cost(next.local) as usize;
-                        if cost < 255 {
-                            let next_state = self.states.get(&next).unwrap_or(&State::default());
-                            min_rhs = min_rhs.min(cost + next_state.g);
+            let directions = [
+                Direction::Top,
+                Direction::TopRight,
+                Direction::Right,
+                Direction::BottomRight,
+                Direction::Bottom,
+                Direction::BottomLeft,
+                Direction::Left,
+                Direction::TopLeft,
+            ];
+            
+            for &dir in &directions {
+                if let Some(next) = pos.r#move(dir) {
+                    if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
+                        let edge_cost = cost_matrix.get_local(next.local()) as usize;
+                        if edge_cost < 255 {
+                            let cost = edge_cost + self.states.get(&next).copied().unwrap_or_default().g;
+                            min_rhs = min_rhs.min(cost);
                         }
                     }
                 }
             }
-            let state = self.states.entry(pos).or_default();
-            state.rhs = min_rhs;
+            self.states.get_mut(&pos).unwrap().rhs = min_rhs;
         }
         
-        let state = self.states.get(&pos).unwrap();
-        if state.g != state.rhs {
-            self.queue.push((self.calculate_key(pos), pos));
-        }
+        let key = self.calculate_key(pos);
+        self.queue.push(QueueState { pos, k: key });
     }
     
     fn compute_shortest_path(
@@ -127,49 +150,71 @@ impl DStarLite {
         get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
         max_ops: &mut usize,
     ) -> bool {
-        while let Some((k_old, pos)) = self.queue.pop() {
-            if *max_ops == 0 {
-                return false;
-            }
-            *max_ops -= 1;
+        while let Some(top) = self.queue.peek() {
+            let start_key = self.calculate_key(self.start);
+            let start_state = self.states.get(&self.start).copied().unwrap_or_default();
             
-            let k_new = self.calculate_key(pos);
-            if k_old > k_new {
-                self.queue.push((k_new, pos));
+            if !(top.k < start_key || start_state.rhs != start_state.g) || *max_ops == 0 {
+                break;
+            }
+            
+            *max_ops -= 1;
+            let u = self.queue.pop().unwrap().pos;
+            let k_old = self.calculate_key(u);
+            let k_new = self.calculate_key(u);
+
+            if k_old < k_new {
+                self.queue.push(QueueState { pos: u, k: k_new });
             } else {
-                let state = self.states.get(&pos).unwrap();
+                let state = self.states.get(&u).copied().unwrap_or_default();
                 if state.g > state.rhs {
-                    let new_g = state.rhs;
-                    self.states.get_mut(&pos).unwrap().g = new_g;
-                    
-                    for direction in Direction::all() {
-                        if let Some(next) = pos.step(direction) {
+                    self.states.get_mut(&u).unwrap().g = state.rhs;
+                    let directions = [
+                        Direction::Top,
+                        Direction::TopRight,
+                        Direction::Right,
+                        Direction::BottomRight,
+                        Direction::Bottom,
+                        Direction::BottomLeft,
+                        Direction::Left,
+                        Direction::TopLeft,
+                    ];
+                    for &dir in &directions {
+                        if let Some(next) = u.r#move(dir) {
                             self.update_vertex(next, get_cost_matrix);
+                            let key = self.calculate_key(next);
+                            self.queue.push(QueueState { pos: next, k: key });
                         }
                     }
                 } else {
-                    let old_g = state.g;
-                    self.states.get_mut(&pos).unwrap().g = usize::MAX;
-                    
-                    let mut to_update = vec![pos];
-                    for direction in Direction::all() {
-                        if let Some(next) = pos.step(direction) {
-                            if let Some(next_state) = self.states.get(&next) {
-                                if next_state.rhs == old_g + 1 {
-                                    to_update.push(next);
-                                }
-                            }
+                    let mut state = self.states.get(&u).copied().unwrap_or_default();
+                    state.g = usize::MAX;
+                    self.states.insert(u, state);
+                    let directions = [
+                        Direction::Top,
+                        Direction::TopRight,
+                        Direction::Right,
+                        Direction::BottomRight,
+                        Direction::Bottom,
+                        Direction::BottomLeft,
+                        Direction::Left,
+                        Direction::TopLeft,
+                    ];
+                    for &dir in &directions {
+                        if let Some(next) = u.r#move(dir) {
+                            self.update_vertex(next, get_cost_matrix);
+                            let key = self.calculate_key(next);
+                            self.queue.push(QueueState { pos: next, k: key });
                         }
                     }
-                    
-                    for update_pos in to_update {
-                        self.update_vertex(update_pos, get_cost_matrix);
-                    }
+                    self.update_vertex(u, get_cost_matrix);
+                    let key = self.calculate_key(u);
+                    self.queue.push(QueueState { pos: u, k: key });
                 }
             }
         }
-        
-        true
+
+        *max_ops > 0
     }
 }
 
@@ -200,13 +245,23 @@ pub fn dstar_lite_path(
         let mut min_cost = usize::MAX;
         let mut next_pos = None;
         
-        for direction in Direction::all() {
-            if let Some(next) = current.step(direction) {
-                if let Some(cost_matrix) = get_cost_matrix(next.room.to_room_name()) {
-                    let cost = cost_matrix.get_cost(next.local) as usize;
+        let directions = [
+            Direction::Top,
+            Direction::TopRight,
+            Direction::Right,
+            Direction::BottomRight,
+            Direction::Bottom,
+            Direction::BottomLeft,
+            Direction::Left,
+            Direction::TopLeft,
+        ];
+        for &dir in &directions {
+            if let Some(next) = current.r#move(dir) {
+                if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
+                    let cost = cost_matrix.get_local(next.local()) as usize;
                     if cost < 255 {
-                        if let Some(state) = dstar.states.get(&next) {
-                            let total_cost = cost + state.g;
+                        if let Some(g) = dstar.states.get(&next).map(|s| s.g) {
+                            let total_cost = cost + g;
                             if total_cost < min_cost {
                                 min_cost = total_cost;
                                 next_pos = Some(next);
@@ -240,24 +295,37 @@ pub fn js_dstar_lite_path(
     max_ops: u32,
     max_path_length: u32,
 ) -> Option<Path> {
-    let start = PositionIndex::from(start_packed);
-    let goal = PositionIndex::from(goal_packed);
-    
-    let get_cost_matrix = move |room_name: RoomName| -> Option<CustomCostMatrix> {
-        let result = get_cost_matrix
-            .call1(&JsValue::NULL, &JsValue::from(room_name.to_string()))
-            .ok()?;
-        if result.is_null() || result.is_undefined() {
-            return None;
+    let start = Position::from_packed(start_packed);
+    let goal = Position::from_packed(goal_packed);
+    let start = PositionIndex::from(start);
+    let goal = PositionIndex::from(goal);
+
+    let get_cost_matrix = |room_name: RoomName| {
+        let result = get_cost_matrix.call1(
+            &JsValue::NULL,
+            &JsValue::from_f64(room_name.packed_repr() as f64),
+        );
+        match result {
+            Ok(value) => {
+                if value.is_undefined() {
+                    None
+                } else {
+                    CustomCostMatrix::try_from(value).ok()
+                }
+            }
+            Err(_) => None,
         }
-        Some(CustomCostMatrix::try_from(result).ok()?)
     };
-    
+
     dstar_lite_path(
         start,
         goal,
         get_cost_matrix,
         max_ops as usize,
         max_path_length as usize,
-    ).map(|positions| Path::new(positions))
+    )
+    .map(|positions| {
+        let screeps_positions: Vec<Position> = positions.into_iter().map(Position::from).collect();
+        Path::from(screeps_positions)
+    })
 }

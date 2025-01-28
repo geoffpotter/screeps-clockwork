@@ -1,18 +1,17 @@
 use crate::datatypes::{
-    ClockworkCostMatrix, CustomCostMatrix, LocalIndex, MultiroomGenericMap, OptionalCache, PositionIndex, RoomIndex
+    CustomCostMatrix, LocalIndex, MultiroomGenericMap, OptionalCache, PositionIndex, RoomIndex
 };
 use crate::log;
 use crate::utils::set_panic_hook;
 use lazy_static::lazy_static;
-use screeps::{CircleStyle, Direction, RoomCoordinate, RoomName, RoomVisual, RoomXY};
+use screeps::{Direction, RoomName};
 use std::cmp::Ordering;
-use std::collections::{HashMap, BinaryHeap};
+use std::collections::BinaryHeap;
 use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::throw_val;
 use js_sys::Function;
 use screeps::Position;
-use screeps::game::cpu;
 use crate::datatypes::Path;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -166,10 +165,10 @@ pub fn astar_path_heap(
     });
 
     let mut current_room = start.room_name();
-    let mut current_room_cost_matrix = if let Some(cost_matrix) = cost_matrices.get_or_create(current_room) {
+    let mut current_room_cost_matrix = if let Some(cost_matrix) = unsafe { cost_matrices.get_or_create(current_room) } {
         cost_matrix
     } else {
-        log(&format!("No cost matrix for room: {:?}", current_room));
+        log!("No cost matrix for room: {}", current_room);
         return None; // Cannot plan path without a cost matrix
     };
 
@@ -180,7 +179,7 @@ pub fn astar_path_heap(
             return None;
         }
 
-        let current_node = node_info.get_mut(current_pos).unwrap();
+        let current_node = unsafe { node_info.get_mut(current_pos) }.unwrap();
         let current_g_score = current_node.g_score;
         let current_steps = current_node.steps;
         let current_open_direction = current_node.open_direction;
@@ -193,32 +192,32 @@ pub fn astar_path_heap(
             
             while current != start {
                 path.push(current);
-                if let Some(info) = node_info.get(current) {
+                if let Some(info) = unsafe { node_info.get(current) } {
                     current = info.parent;
                 } else {
-                    log(&format!("Path reconstruction failed"));
+                    log!("Path reconstruction failed");
                     return None; // Path reconstruction failed
                 }
             }
-            
+            path.push(start);
             path.reverse();
             return Some(path);
+        }
+
+        // Check if we need to update the cost matrix for a new room
+        if current_pos.room_name() != current_room {
+            current_room = current_pos.room_name();
+            current_room_cost_matrix = if let Some(cost_matrix) = unsafe { cost_matrices.get_or_create(current_room) } {
+                cost_matrix
+            } else {
+                log!("No cost matrix for room: {}", current_room);
+                return None; // Cannot plan path without a cost matrix
+            };
         }
 
         // Explore neighbors
         for direction in next_directions(current_open_direction) {
             let Some(neighbor_pos) = current_pos.r#move(*direction) else { continue; };
-
-            // Update cost matrix if we've entered a new room
-            if neighbor_pos.room_name() != current_room {
-                let next_matrix = cost_matrices.get_or_create(neighbor_pos.room_name());
-                if let Some(cost_matrix) = next_matrix {
-                    current_room_cost_matrix = cost_matrix;
-                    current_room = neighbor_pos.room_name();
-                } else {
-                    continue;
-                }
-            }
 
             // Get movement cost to neighbor
             let xy = neighbor_pos.local();
@@ -234,7 +233,7 @@ pub fn astar_path_heap(
             }
 
             // Check if this path to neighbor is better than any previous path
-            if let Some(existing_neighbor) = node_info.get(neighbor_pos) {
+            if let Some(existing_neighbor) = unsafe { node_info.get(neighbor_pos) } {
                 if neighbor_g_score >= existing_neighbor.g_score {
                     continue; // This path to neighbor is not better than existing path
                 }
@@ -244,14 +243,14 @@ pub fn astar_path_heap(
             let neighbor_f_score = neighbor_g_score + neighbor_h_score;
 
             // Add neighbor to open set
-            node_info.set(neighbor_pos, NodeInfo {
+            unsafe { node_info.set(neighbor_pos, NodeInfo {
                 g_score: neighbor_g_score,
                 h_score: neighbor_h_score,
                 steps: current_steps + 1,
                 position: neighbor_pos,
                 parent: current_pos,
                 open_direction: Some(*direction),
-            });
+            }) };
             open_set.push(Node {
                 f_score: neighbor_f_score,
                 position: neighbor_pos,

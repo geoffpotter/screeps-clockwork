@@ -1,5 +1,4 @@
 use std::fmt;
-use std::convert::TryFrom;
 use screeps::{Direction, Position, RoomCoordinate, RoomName, ROOM_SIZE};
 use super::{local_index::LocalIndex, room_index::RoomIndex};
 
@@ -211,7 +210,23 @@ impl fmt::Debug for PositionIndex {
 
 impl fmt::Display for PositionIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{} {}]", self.room, self.local)
+        write!(f, "{}", Position::from(*self))
+    }
+}
+
+impl Ord for PositionIndex {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // First compare rooms
+        match self.room.cmp(&other.room) {
+            std::cmp::Ordering::Equal => self.local.index().cmp(&other.local.index()),
+            ord => ord,
+        }
+    }
+}
+
+impl PartialOrd for PositionIndex {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -252,6 +267,8 @@ impl From<PositionIndex> for Position {
 #[cfg(test)]
 mod tests {
 
+
+    use std::convert::TryFrom;
 
     use super::*;
 

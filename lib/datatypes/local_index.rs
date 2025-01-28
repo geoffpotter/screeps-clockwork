@@ -8,7 +8,7 @@ const ROOM_SIZE_U16: u16 = ROOM_SIZE as u16;
 /// Represents a position within a room in the Screeps world, packed into a u16.
 /// Uses x-major indexing: packed = x * ROOM_SIZE + y
 /// Coordinates wrap around the edges of the room.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
 pub struct LocalIndex {
     // Packed as: x * ROOM_SIZE + y
     // Needs u16 since max value is 50 * 50 = 2500

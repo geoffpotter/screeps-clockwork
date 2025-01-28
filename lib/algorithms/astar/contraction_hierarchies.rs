@@ -1,11 +1,10 @@
 use crate::datatypes::{
-    ClockworkCostMatrix, CustomCostMatrix, LocalIndex, MultiroomGenericMap, OptionalCache, PositionIndex, RoomIndex, Path
+    CustomCostMatrix, LocalIndex, PositionIndex, Path
 };
-use crate::log;
-use lazy_static::lazy_static;
-use screeps::{Direction, RoomName};
+use screeps::{Direction, RoomName, RoomXY, Position};
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use js_sys::Function;
 
@@ -44,10 +43,21 @@ impl ContractionHierarchy {
         let mut outgoing = Vec::new();
         
         // Find all neighbors
-        for direction in Direction::all() {
-            if let Some(neighbor) = node.step(direction) {
-                if let Some(cost_matrix) = get_cost_matrix(neighbor.room.to_room_name()) {
-                    let cost = cost_matrix.get_cost(neighbor.local) as usize;
+        let directions = [
+            Direction::Top,
+            Direction::TopRight,
+            Direction::Right,
+            Direction::BottomRight,
+            Direction::Bottom,
+            Direction::BottomLeft,
+            Direction::Left,
+            Direction::TopLeft,
+        ];
+        
+        for direction in directions.iter() {
+            if let Some(neighbor) = node.r#move(*direction) {
+                if let Some(cost_matrix) = get_cost_matrix(neighbor.room_name()) {
+                    let cost = cost_matrix.get(RoomXY::new(neighbor.x(), neighbor.y())) as usize;
                     if cost < 255 {
                         if self.node_levels.get(&neighbor).unwrap_or(&0) < self.node_levels.get(&node).unwrap_or(&0) {
                             incoming.push((neighbor, cost));
@@ -82,7 +92,6 @@ impl ContractionHierarchy {
         nodes: Vec<PositionIndex>,
         get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
     ) {
-        let mut level = 0;
         let mut remaining_nodes: HashSet<_> = nodes.into_iter().collect();
         
         while !remaining_nodes.is_empty() {
@@ -95,8 +104,19 @@ impl ContractionHierarchy {
                     visited.insert(node);
                     
                     // Mark neighbors as visited
-                    for direction in Direction::all() {
-                        if let Some(neighbor) = node.step(direction) {
+                    let directions = [
+                        Direction::Top,
+                        Direction::TopRight,
+                        Direction::Right,
+                        Direction::BottomRight,
+                        Direction::Bottom,
+                        Direction::BottomLeft,
+                        Direction::Left,
+                        Direction::TopLeft,
+                    ];
+                    
+                    for direction in directions.iter() {
+                        if let Some(neighbor) = node.r#move(*direction) {
                             visited.insert(neighbor);
                         }
                     }
@@ -104,15 +124,10 @@ impl ContractionHierarchy {
             }
             
             for node in &independent_set {
-                self.node_levels.insert(*node, level);
                 self.contract_node(*node, get_cost_matrix);
                 remaining_nodes.remove(node);
             }
-            
-            level += 1;
         }
-        
-        self.max_level = level;
     }
     
     fn find_path(
@@ -125,7 +140,6 @@ impl ContractionHierarchy {
         struct State {
             cost: usize,
             position: PositionIndex,
-            level: usize,
         }
         
         impl Ord for State {
@@ -150,12 +164,10 @@ impl ContractionHierarchy {
         forward_queue.push(State {
             cost: 0,
             position: start,
-            level: 0,
         });
         backward_queue.push(State {
             cost: 0,
             position: goal,
-            level: 0,
         });
         
         forward_distances.insert(start, 0);
@@ -168,7 +180,7 @@ impl ContractionHierarchy {
         
         while !forward_queue.is_empty() && !backward_queue.is_empty() {
             // Forward search
-            if let Some(State { cost, position, level }) = forward_queue.pop() {
+            if let Some(State { cost, position }) = forward_queue.pop() {
                 if cost > best_cost {
                     break;
                 }
@@ -182,25 +194,32 @@ impl ContractionHierarchy {
                 }
                 
                 // Regular edges
-                for direction in Direction::all() {
-                    if let Some(next) = position.step(direction) {
-                        let next_level = *self.node_levels.get(&next).unwrap_or(&0);
-                        if next_level >= level {
-                            if let Some(cost_matrix) = get_cost_matrix(next.room.to_room_name()) {
-                                let edge_cost = cost_matrix.get_cost(next.local) as usize;
-                                if edge_cost < 255 {
-                                    let next_cost = cost + edge_cost;
-                                    if next_cost < *forward_distances.get(&next).unwrap_or(&usize::MAX) {
-                                        forward_distances.insert(next, next_cost);
-                                        let mut path = forward_paths[&position].clone();
-                                        path.push(next);
-                                        forward_paths.insert(next, path);
-                                        forward_queue.push(State {
-                                            cost: next_cost,
-                                            position: next,
-                                            level: next_level,
-                                        });
-                                    }
+                let directions = [
+                    Direction::Top,
+                    Direction::TopRight,
+                    Direction::Right,
+                    Direction::BottomRight,
+                    Direction::Bottom,
+                    Direction::BottomLeft,
+                    Direction::Left,
+                    Direction::TopLeft,
+                ];
+                
+                for direction in directions.iter() {
+                    if let Some(next) = position.r#move(*direction) {
+                        if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
+                            let edge_cost = cost_matrix.get(RoomXY::new(next.x(), next.y())) as usize;
+                            if edge_cost < 255 {
+                                let next_cost = cost + edge_cost;
+                                if next_cost < *forward_distances.get(&next).unwrap_or(&usize::MAX) {
+                                    forward_distances.insert(next, next_cost);
+                                    let mut path = forward_paths[&position].clone();
+                                    path.push(next);
+                                    forward_paths.insert(next, path);
+                                    forward_queue.push(State {
+                                        cost: next_cost,
+                                        position: next,
+                                    });
                                 }
                             }
                         }
@@ -210,27 +229,23 @@ impl ContractionHierarchy {
                 // Shortcut edges
                 if let Some(shortcuts) = self.shortcuts.get(&position) {
                     for shortcut in shortcuts {
-                        let next_level = *self.node_levels.get(&shortcut.to).unwrap_or(&0);
-                        if next_level >= level {
-                            let next_cost = cost + shortcut.cost;
-                            if next_cost < *forward_distances.get(&shortcut.to).unwrap_or(&usize::MAX) {
-                                forward_distances.insert(shortcut.to, next_cost);
-                                let mut path = forward_paths[&position].clone();
-                                path.extend(shortcut.path[1..].iter());
-                                forward_paths.insert(shortcut.to, path);
-                                forward_queue.push(State {
-                                    cost: next_cost,
-                                    position: shortcut.to,
-                                    level: next_level,
-                                });
-                            }
+                        let next_cost = cost + shortcut.cost;
+                        if next_cost < *forward_distances.get(&shortcut.to).unwrap_or(&usize::MAX) {
+                            forward_distances.insert(shortcut.to, next_cost);
+                            let mut path = forward_paths[&position].clone();
+                            path.extend(shortcut.path[1..].iter());
+                            forward_paths.insert(shortcut.to, path);
+                            forward_queue.push(State {
+                                cost: next_cost,
+                                position: shortcut.to,
+                            });
                         }
                     }
                 }
             }
             
             // Backward search (similar to forward search)
-            if let Some(State { cost, position, level }) = backward_queue.pop() {
+            if let Some(State { cost, position }) = backward_queue.pop() {
                 if cost > best_cost {
                     break;
                 }
@@ -272,24 +287,26 @@ pub fn contraction_hierarchies_path(
     nodes.insert(start);
     nodes.insert(goal);
     
-    // Add room boundary nodes
-    let rooms = HashSet::from([start.room, goal.room]);
+    // Add border nodes
+    let rooms = HashSet::from([start.room(), goal.room()]);
     for room in rooms {
-        for x in [0, 49] {
-            for y in 0..50 {
+        // Add nodes along x borders (y = 0 and y = 49)
+        for y in [0, 49] {
+            for x in 0..50 {
                 let pos = PositionIndex::new(room, LocalIndex::new(x, y));
-                if let Some(matrix) = get_cost_matrix(room.to_room_name()) {
-                    if matrix.get_cost(LocalIndex::new(x, y)) < 255 {
+                if let Some(matrix) = get_cost_matrix(room.room_name()) {
+                    if matrix.get_local(pos.local()) < 255 {
                         nodes.insert(pos);
                     }
                 }
             }
         }
-        for y in [0, 49] {
-            for x in 0..50 {
+        // Add nodes along y borders (x = 0 and x = 49)
+        for x in [0, 49] {
+            for y in 1..49 {  // Skip corners since they were handled above
                 let pos = PositionIndex::new(room, LocalIndex::new(x, y));
-                if let Some(matrix) = get_cost_matrix(room.to_room_name()) {
-                    if matrix.get_cost(LocalIndex::new(x, y)) < 255 {
+                if let Some(matrix) = get_cost_matrix(room.room_name()) {
+                    if matrix.get_local(pos.local()) < 255 {
                         nodes.insert(pos);
                     }
                 }
@@ -310,24 +327,35 @@ pub fn js_contraction_hierarchies_path(
     max_ops: u32,
     max_path_length: u32,
 ) -> Option<Path> {
-    let start = PositionIndex::from(start_packed);
-    let goal = PositionIndex::from(goal_packed);
-    
-    let get_cost_matrix = move |room_name: RoomName| -> Option<CustomCostMatrix> {
-        let result = get_cost_matrix
-            .call1(&JsValue::NULL, &JsValue::from(room_name.to_string()))
-            .ok()?;
-        if result.is_null() || result.is_undefined() {
-            return None;
+    let start = Position::from_packed(start_packed).into();
+    let goal = Position::from_packed(goal_packed).into();
+
+    let get_cost_matrix = |room_name: RoomName| {
+        let result = get_cost_matrix.call1(
+            &JsValue::NULL,
+            &JsValue::from_f64(room_name.packed_repr() as f64),
+        );
+        match result {
+            Ok(value) => {
+                if value.is_undefined() {
+                    None
+                } else {
+                    CustomCostMatrix::try_from(value).ok()
+                }
+            }
+            Err(_) => None,
         }
-        Some(CustomCostMatrix::try_from(result).ok()?)
     };
-    
+
     contraction_hierarchies_path(
         start,
         goal,
         get_cost_matrix,
         max_ops as usize,
         max_path_length as usize,
-    ).map(|positions| Path::new(positions))
+    )
+    .map(|positions| {
+        let screeps_positions: Vec<Position> = positions.into_iter().map(Position::from).collect();
+        Path::from(screeps_positions)
+    })
 }

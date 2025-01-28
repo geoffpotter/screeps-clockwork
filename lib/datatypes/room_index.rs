@@ -19,7 +19,7 @@ pub const HALF_WORLD_SIZE_U16: u16 = HALF_WORLD_SIZE as u16;
 /// - N is negative Y, S is positive Y
 /// - E is positive X, W is negative X
 /// Uses x-major indexing: packed = x * WORLD_SIZE + y
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Default)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Default, Ord, PartialOrd)]
 pub struct RoomIndex {
     packed: u16,
 }
