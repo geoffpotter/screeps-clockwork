@@ -280,4 +280,7 @@ mod tests {
             initial_size + std::mem::size_of::<NumericMap<usize>>()
         );
     }
-} 
+}
+
+
+pub struct MultiroomNumericMapUsize(MultiroomNumericMap<usize>);

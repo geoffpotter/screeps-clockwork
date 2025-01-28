@@ -1,8 +1,7 @@
 use crate::algorithms::astar::metrics::PathfindingMetrics;
-use crate::algorithms::map::neighbors_with_open_direction;
+use crate::algorithms::path::to_multiroom_distance_map_origin::path_to_multiroom_distance_map_origin;
 use crate::datatypes::{
-    ClockworkCostMatrix, CustomCostMatrix, OptionalCache, PositionIndex,
-    RoomIndex, LocalIndex, MultiroomNumericMap, JsMultiroomNumericMap
+    ClockworkCostMatrix, CustomCostMatrix, JsMultiroomNumericMap, LocalIndex, MultiroomNumericMap, OptionalCache, Path, PositionIndex, RoomIndex
 };
 use crate::log;
 use crate::utils::set_panic_hook;
@@ -140,7 +139,7 @@ pub fn astar_multiroom_distance_map3(
         if let Some(cost_matrix) = cost_matrices.get_or_create(current_room.room_name()) {
             cost_matrix
         } else {
-            log(&format!("A*: {:?}", metrics));
+            // log(&format!("A*: {:?}", metrics));
             return multiroom_distance_map;
         };
     let mut current_room_distance_map = multiroom_distance_map.get_or_create_room_map(current_room);
@@ -211,13 +210,13 @@ pub fn astar_multiroom_distance_map3(
             visited += 1;
 
             if goals.contains(&neighbor_pos) || visited >= max_tiles {
-                log(&format!("A*: {:?}", metrics));
+                // log(&format!("A*: {:?}", metrics));
                 return multiroom_distance_map;
             }
         }
     }
 
-    log(&format!("A*: {:?}", metrics));
+    // log(&format!("A*: {:?}", metrics));
     multiroom_distance_map
 }
 
@@ -266,4 +265,63 @@ pub fn js_astar_multiroom_distance_map3(
             .collect(),
     );
     JsMultiroomNumericMap { internal: result }
+}
+
+
+
+#[wasm_bindgen]
+pub fn js_astar_multiroom_path3(
+    start_packed: Vec<u32>,
+    get_cost_matrix: &js_sys::Function,
+    max_tiles: usize,
+    max_tile_distance: usize,
+    destinations: Vec<u32>,
+) -> Path {
+    let start_positions = start_packed
+        .iter()
+        .map(|pos| PositionIndex::from(Position::from_packed(*pos)))
+        .collect();
+    let result = astar_multiroom_distance_map3(
+        start_positions,
+        |room| {
+            let result = get_cost_matrix.call1(
+                &JsValue::null(),
+                &JsValue::from_f64(room.packed_repr() as f64),
+            );
+
+            let value = match result {
+                Ok(value) => value,
+                Err(e) => throw_val(e),
+            };
+
+            let cost_matrix = if value.is_undefined() {
+                None
+            } else {
+                Some(
+                    ClockworkCostMatrix::try_from(value)
+                        .ok()
+                        .expect_throw("Invalid ClockworkCostMatrix"),
+                )
+            };
+
+            cost_matrix
+        },
+        max_tiles,
+        max_tile_distance,
+        destinations
+            .iter()
+            .map(|pos| PositionIndex::from(Position::from_packed(*pos)))
+            .collect(),
+    );
+    if let Ok(path) = path_to_multiroom_distance_map_origin(Position::from_packed(destinations[0]), &result) {
+        path
+    } else {
+        Path::new()
+    }
+
+    // if let Ok(path) = path_to_multiroom_distance_map_origin(Position::from_packed(start_packed[0]), &result) {
+    //     path.into_iter().map(|pos| pos.packed_repr()).collect()
+    // } else {
+    //     vec![]
+    // }
 }

@@ -72,13 +72,13 @@ export function astar_path(
   const startPacked = new Uint32Array([origin.__packedPos]);
   const goalPacked = new Uint32Array([goal.__packedPos]);
   start_cpu = Game.cpu.getUsed();
-  const result5 = js_astar_multiroom_distance_map(
-    startPacked,
-    (roomName: number) => getTerrainCostMatrix(fromPackedRoomName(roomName)),
-    maxOps,
-    maxPathLength,
-    goalPacked
-  );
+  // const result5 = js_astar_multiroom_distance_map(
+  //   startPacked,
+  //   (roomName: number) => getTerrainCostMatrix(fromPackedRoomName(roomName)),
+  //   maxOps,
+  //   maxPathLength,
+  //   goalPacked
+  // );
   end_cpu = Game.cpu.getUsed();
   console.log(`js: Distance Map Cpu time: ${end_cpu - start_cpu}`);
 

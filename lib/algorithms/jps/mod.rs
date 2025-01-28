@@ -7,17 +7,14 @@ mod types;
 pub use room::RoomInfo;
 pub use goal::{Goal, PathfindingOptions};
 pub use pathfinder::PathFinder;
-use screeps::{game, Position, Direction, RoomCoordinate, RoomName, LocalCostMatrix, RoomXY, RoomTerrain, LocalRoomTerrain, Terrain};
+use screeps::{game, CircleStyle, Direction, LocalCostMatrix, LocalRoomTerrain, Position, RoomCoordinate, RoomName, RoomTerrain, RoomVisual, RoomXY, Terrain};
 pub use types::*;
 use wasm_bindgen::{prelude::wasm_bindgen, throw_str};
 
-use crate::log;
+use crate::utils::PROFILER;
 
-use screeps::{CircleStyle, LineStyle, RoomVisual, TextAlign, TextStyle};
-use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}, utils::PROFILER};
 use super::astar::cost_cache::CostCache;
-use super::map::corresponding_room_edge;
-use std::{borrow::Borrow, sync::Arc};
+
 
 const ROOM_AREA: usize = 2500;
 
@@ -279,7 +276,7 @@ thread_local! {
 
 #[wasm_bindgen]
 pub fn js_pathfinder(origin: u32, goals: Vec<u32>) -> Vec<u32> {
-    let start = game::cpu::get_used();
+    // let start = game::cpu::get_used();
     PATHFINDER.with(|pf| {
         let mut pf = pf.borrow_mut();
         let origin = Position::from_packed(origin);
@@ -291,7 +288,7 @@ pub fn js_pathfinder(origin: u32, goals: Vec<u32>) -> Vec<u32> {
             })
             .collect();
         // log(&format!("Rust Pathfinder setup: {}", game::cpu::get_used() - start).to_string());
-        let start = game::cpu::get_used();
+        //let start = game::cpu::get_used();
         let options = PathfindingOptions {
             plain_cost: 1,
             swamp_cost: 5,

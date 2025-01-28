@@ -114,12 +114,12 @@ export default [
         return;
       }
       const distanceMap = ephemeral(
-        jpsMultiroomDistanceMap(
+        jpsDistanceMap(
           [originFlag.pos],
           targetFlags.map(flag => flag.pos),
           {
             costMatrixCallback: getTerrainCostMatrix,
-            maxTiles: 10000
+            maxOps: 10000
           }
         )
       );
@@ -142,9 +142,9 @@ export default [
       }
 
       const distanceMap = ephemeral(
-        jpsMultiroomDistanceMap([originFlag.pos], [targetFlag.pos], {
+        jpsDistanceMap([originFlag.pos], [targetFlag.pos], {
           costMatrixCallback: getTerrainCostMatrix,
-          maxTiles: 10000
+          maxOps: 10000
         })
       );
 

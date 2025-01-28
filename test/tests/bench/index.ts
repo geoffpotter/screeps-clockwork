@@ -8,9 +8,13 @@ export interface BenchmarkSuite<ResultT, ArgsT> {
     cases: BenchmarkCase<ResultT, ArgsT>[];
     implementations: BenchmarkImplementation<ResultT, ArgsT>[];
     /**
-     * Validate the result of the benchmark, called once after the benchmark is complete, validates all results
+     * Validate the result of the benchmark against a reference result
+     * @param result The result to validate
+     * @param referenceResult The reference result to validate against
+     * @param args The arguments that were used to generate this result
+     * @returns true if the result is valid, or an error string describing why it's invalid
      */
-    validate?: (result: ResultT, referenceResult: ResultT, args: ArgsT) => boolean;
+    validate?: (result: ResultT, referenceResult: ResultT, args: ArgsT) => true | string;
 }
 
 export interface BenchmarkCase<ResultT, ArgsT> {
@@ -30,7 +34,7 @@ export interface BenchmarkResult<ResultT> {
     results: ResultT[];
     avgCpuTime: number;
     totalCpuTime: number;
-    valid: boolean;
+    failures: string[];
 }
 
 export class Benchmark<ResultT, ArgsT> {
@@ -64,17 +68,19 @@ export class Benchmark<ResultT, ArgsT> {
         // Return true when complete
         if (this.state === 'complete') return true;
 
-        const startCpu = Game.cpu.getUsed();
+        // const startCpu = Game.cpu.getUsed();
 
-        while (Game.cpu.getUsed() - startCpu < this.tickCpuLimit) {
+        while (Game.cpu.getUsed() < this.tickCpuLimit) {
+            // console.log("running implementation", this.currentImpl);
             if (this.runImplementation()) {
                 return true;
             }
         }
 
-        const impl = this.suite.implementations[this.currentImpl];
+
+        const impl = this.suite.implementations.find(i => i.name === this.currentImpl);
         if (impl) {
-            console.log(`Done with tick - Case: ${this.getCurrentCase().benchmarkName}, Implementation: ${impl.name}`);
+            console.log(`Done with tick - Case: ${this.getCurrentCase().benchmarkName}, Implementation: ${impl.name} ${this.currentImpl} ${this.iterationsCompleted} iterations of ${this.args.length}`);
         }
 
         return false;
@@ -96,8 +102,10 @@ export class Benchmark<ResultT, ArgsT> {
                     this.currentCase++;
                     this.args = this.getCurrentCase().setup_args();
                     this.referenceResults = null;
+                    console.log("switching to next case", this.getCurrentCase().benchmarkName);
                 }
             }
+            console.log("between implementations", nextImpl);
             this.betweenImplementations();
             this.currentImpl = nextImpl || '';
             this.iterationsCompleted = 0;
@@ -109,12 +117,17 @@ export class Benchmark<ResultT, ArgsT> {
         if (!impl) return true;
         
         const args = this.args[this.iterationsCompleted];
-
         // Run single iteration and measure CPU
         const startCpu = Game.cpu.getUsed();
-        const result = impl.fn(args);
-        this.totalCpuUsed += Game.cpu.getUsed() - startCpu;
+        let result: ResultT;
+        try {
+            result = impl.fn(args);
+        } catch (e) {
+            console.log("error in implementation", impl.name, e, JSON.stringify(e), Object.keys(e));
+            result = [] as any;
+        }
         
+        this.totalCpuUsed += Game.cpu.getUsed() - startCpu;
         this.currentResults.push(result);
         this.iterationsCompleted++;
 
@@ -126,7 +139,7 @@ export class Benchmark<ResultT, ArgsT> {
                 results: this.currentResults,
                 avgCpuTime: this.totalCpuUsed / this.args.length,
                 totalCpuTime: this.totalCpuUsed,
-                valid: true
+                failures: []
             };
 
             // If this is the first implementation, store reference results
@@ -136,9 +149,12 @@ export class Benchmark<ResultT, ArgsT> {
 
             // Validate results if needed
             if (this.suite.validate && this.referenceResults) {
-                result.valid = this.currentResults.every((res, idx) => 
-                    this.suite.validate!(res, this.referenceResults![idx], this.args[idx])
-                );
+                this.currentResults.forEach((res, idx) => {
+                    const validationResult = this.suite.validate!(res, this.referenceResults![idx], this.args[idx]);
+                    if (validationResult !== true) {
+                        result.failures.push(`Failed at index ${idx} with args ${JSON.stringify(this.args[idx])}: ${validationResult}`);
+                    }
+                });
             }
 
             this.getCaseResults().set(this.currentImpl, result);
@@ -169,8 +185,13 @@ export class Benchmark<ResultT, ArgsT> {
         const nameWidth = 50;
         const numWidth = 12;
         
-        console.log(`\nBenchmark Results for: ${this.suite.name}`);
+
+        let failureText = '';
+
+        console.log(`\nBenchmark Results for: ${this.suite.name}, ${this.suite.cases.length} cases, ${this.suite.implementations.length} implementations`);
         console.log('=====================================');
+        let colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'pink', 'gray', 'brown', 'black'];
+        let caseIdx = 0;
         for (const [caseName, caseResults] of this.results) {
             console.log(`\nCase: ${caseName}`);
             // Header
@@ -184,10 +205,15 @@ export class Benchmark<ResultT, ArgsT> {
                 let raw_results = (result as BenchmarkResult<RoomPosition[]>).results;
                 if (raw_results) {
                     for (let res of raw_results) {
-                        Game.map.visual.poly(res, {stroke: 'black'});
+                        let col = colors[caseIdx % colors.length];
+                        try {
+                            Game.map.visual.poly(res, {stroke: col});
+                        } catch (e) {
+                            // console.log(e);
+                        }
                     }
                 }
-                const status = result.valid ? '✓' : '✗';
+                const status = result.failures.length === 0 ? '✓' : `✗ (${result.failures.length} failures of ${result.results.length})`;
                 const avgCpu = result.avgCpuTime.toFixed(3);
                 const totalCpu = result.totalCpuTime.toFixed(3);
                 
@@ -197,7 +223,17 @@ export class Benchmark<ResultT, ArgsT> {
                     `${totalCpu.padStart(numWidth)}ms | ` +
                     `${status}`
                 );
+
+                if (result.failures.length > 0) {
+                    failureText += result.implementationName + ' Failures:\n';
+                    result.failures.forEach(failure => failureText += `    - ${failure}\n`);
+                }
             }
+            caseIdx++;
+        }
+
+        if (failureText) {
+            console.log('\n\nFailures:\n' + failureText);
         }
     }
 
