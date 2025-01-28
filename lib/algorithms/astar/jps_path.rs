@@ -1,4 +1,3 @@
-
 use std::convert::TryFrom;
 
 use crate::algorithms::astar::metrics::PathfindingMetrics;
@@ -273,7 +272,6 @@ pub fn jps_multiroom_distance_map(
                     if profiling_enabled {
                         profiler.end_call("direction_processing");
                     }
-                    // log(&format!("impassable: {:?}, cost: {}, existing cost: {}, g_score: {}", direction, first_step_cost, current_room_distance_map[first_step.xy()], g_score));
                     continue;
                 }
 
@@ -283,9 +281,15 @@ pub fn jps_multiroom_distance_map(
                 if let Some(neighbor) =
                     jump(position, first_step, *direction, first_step_cost, goals.as_slice())
                 {
-                    // if cost_cache.look(WorldPosition::from(neighbor)) == OBSTACLE {
-                    //     continue;
-                    // }
+                    // Check if the jumped-to position is a wall
+                    if cost_cache.look(WorldPosition::from(neighbor)) == OBSTACLE {
+                        if profiling_enabled {
+                            profiler.end_call("jump");
+                            profiler.end_call("direction_processing");
+                        }
+                        continue;
+                    }
+
                     if profiling_enabled {
                         profiler.end_call("jump");
                         profiler.start_call("jump handling");

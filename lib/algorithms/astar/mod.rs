@@ -11,3 +11,9 @@ pub mod multiroom_astar_numeric;
 pub mod multiroom_astar_standard;
 pub mod multiroom_distance_map2;
 pub mod multiroom_distance_map3;
+
+pub mod bidirectional_astar;
+pub mod theta_star;
+pub mod dstar_lite;
+pub mod contraction_hierarchies;
+pub mod lazy_theta_star;

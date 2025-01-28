@@ -27,24 +27,39 @@ pub fn jump(
     direction: Direction,
     jump_cost: Cost,
     goals: &[Position],
-    // cost_cache: &mut CostCache
 ) -> Option<Position> {
     let profiling_enabled = false;
     let profiler = &PROFILER;
-
     let cost_cache = CostCache::get_instance();
+
+    // Check if the next position is valid and not a wall
     let next_pos = current_position.checked_add_direction(direction).ok()?;
     let next_cost = cost_cache.look(WorldPosition::from(next_pos));
-    // log(&format!("next_cost: {}", next_cost));
+    
     if next_cost == OBSTACLE {
-        let viz = RoomVisual::new(Some(next_pos.room_name()));
-        viz.circle(
-            next_pos.x().u8() as f32,
-            next_pos.y().u8() as f32,
-            Some(CircleStyle::default().stroke("#ff0000").fill("transparent").opacity(0.5).radius(0.4)),
-        );
-        // log(&format!("impassable: {:?}, cost: {}, jump cost: {}", direction, next_cost, jump_cost));
         return None;
+    }
+
+    // For diagonal movement, we need to check both cardinal directions are walkable
+    if direction.is_diagonal() {
+        let horiz_dir = if direction == Direction::TopRight || direction == Direction::BottomRight {
+            Direction::Right
+        } else {
+            Direction::Left
+        };
+        let vert_dir = if direction == Direction::TopRight || direction == Direction::TopLeft {
+            Direction::Top
+        } else {
+            Direction::Bottom
+        };
+        
+        let horiz_pos = current_position.checked_add_direction(horiz_dir).ok()?;
+        let vert_pos = current_position.checked_add_direction(vert_dir).ok()?;
+        
+        if cost_cache.look(WorldPosition::from(horiz_pos)) == OBSTACLE ||
+           cost_cache.look(WorldPosition::from(vert_pos)) == OBSTACLE {
+            return None;
+        }
     }
 
     // Quick checks first
@@ -61,7 +76,7 @@ pub fn jump(
         profiler.start_call("jump::room_transition");
     }
 
-
+    // Handle room transitions
     if current_position.x() == RoomCoordinate::new(0).unwrap() {
         if direction == Direction::Left || direction == Direction::TopLeft || direction == Direction::BottomLeft {
             if direction == Direction::Left {
@@ -76,7 +91,7 @@ pub fn jump(
                 }
             } else {
                 if profiling_enabled {
-                    profiler.end_call("jump::room_transition"); 
+                    profiler.end_call("jump::room_transition");
                 }
                 return None;
             }
@@ -148,31 +163,24 @@ pub fn jump(
 
     if profiling_enabled {
         profiler.end_call("jump::room_transition");
-    }
-
-    if profiling_enabled {
         profiler.start_call("jump::neighbor_checks");
     }
+
     // Diagonal movement
     if direction.is_diagonal() {
+        // Check back corners for forced neighbors
         let back_and_right = current_position
             .checked_add_direction(direction.multi_rot(3))
-            // .map(corresponding_room_edge)
             .map(WorldPosition::from)
             .ok()?;
         let back_and_left = current_position
             .checked_add_direction(direction.multi_rot(-3))
-            // .map(corresponding_room_edge)
             .map(WorldPosition::from)
             .ok()?;
 
         // Check for forced neighbors
-        if 
-            //back_and_left.room_name() != current_position.room_name() || 
-            cost_cache.look(back_and_left) > jump_cost ||
-            //back_and_right.room_name() != current_position.room_name() ||
-            cost_cache.look(back_and_right) > jump_cost
-        {
+        if cost_cache.look(back_and_left) == OBSTACLE ||
+           cost_cache.look(back_and_right) == OBSTACLE {
             if profiling_enabled {
                 profiler.end_call("jump::neighbor_checks");
             }
@@ -185,8 +193,21 @@ pub fn jump(
         if profiling_enabled {
             profiler.start_call("jump::diagonal_recursive");
         }
-        let jump_up_and_left = jump(next_pos, current_position, dir_up_and_left, jump_cost, goals);
-        let jump_up_and_right = jump(next_pos, current_position, dir_up_and_right, jump_cost, goals);
+
+        // Before recursive calls, check if those directions are walkable
+        let up_left_pos = next_pos.checked_add_direction(dir_up_and_left).ok()?;
+        let up_right_pos = next_pos.checked_add_direction(dir_up_and_right).ok()?;
+        
+        let mut jump_up_and_left = None;
+        let mut jump_up_and_right = None;
+        
+        if cost_cache.look(WorldPosition::from(up_left_pos)) != OBSTACLE {
+            jump_up_and_left = jump(next_pos, current_position, dir_up_and_left, jump_cost, goals);
+        }
+        if cost_cache.look(WorldPosition::from(up_right_pos)) != OBSTACLE {
+            jump_up_and_right = jump(next_pos, current_position, dir_up_and_right, jump_cost, goals);
+        }
+        
         if profiling_enabled {
             profiler.end_call("jump::diagonal_recursive");
         }
@@ -200,78 +221,49 @@ pub fn jump(
             return Some(next_pos);
         }
     } else {
-        // Cardinal movement - check for forced neighbors
-        let left = current_position
-            .checked_add_direction(direction.multi_rot(-2))
-            // .map(corresponding_room_edge)
-            .map(WorldPosition::from)
-            .ok()?;
-        let right = current_position
-            .checked_add_direction(direction.multi_rot(2))
-            // .map(corresponding_room_edge)
-            .map(WorldPosition::from)
-            .ok()?;
-
-        let left_cost = cost_cache.look(left); 
-        let right_cost = cost_cache.look(right);
-
-        let left_and_up = current_position
-            .checked_add_direction(direction.multi_rot(-1))
-            // .map(corresponding_room_edge)
-            .map(WorldPosition::from)
-            .ok()?;
-        let right_and_up = current_position
-            .checked_add_direction(direction.multi_rot(1))
-            // .map(corresponding_room_edge)
-            .map(WorldPosition::from)
-            .ok()?;
-        let left_and_up_cost = cost_cache.look(left_and_up);
-        let right_and_up_cost = cost_cache.look(right_and_up);
-
-        // special check for first position
-        if next_pos.is_equal_to(first_position) {
-            let left_and_back = current_position
-                .checked_add_direction(direction.multi_rot(-3))
-                // .map(corresponding_room_edge)
+        // Straight movement
+        if direction == Direction::Left || direction == Direction::Right {
+            let up = current_position
+                .checked_add_direction(Direction::Top)
                 .map(WorldPosition::from)
                 .ok()?;
-            let right_and_back = current_position
-                .checked_add_direction(direction.multi_rot(3))
-                // .map(corresponding_room_edge)
+            let down = current_position
+                .checked_add_direction(Direction::Bottom)
                 .map(WorldPosition::from)
                 .ok()?;
-            let left_and_back_cost = cost_cache.look(left_and_back);
-            let right_and_back_cost = cost_cache.look(right_and_back);
-            if left_cost < 255 && (left_and_back_cost >= left_cost) {
-                return Some(first_position);
-            }
-            if right_cost < 255 && (right_and_back_cost > right_cost) {
-                return Some(first_position);
-            }
-        }
 
-        if (left_and_up_cost < 255 && !(left_and_up_cost >= left_cost)) ||
-           (right_and_up_cost < 255 && !(right_and_up_cost >= right_cost))
-        {
-            if profiling_enabled {
-                profiler.end_call("jump::neighbor_checks");
+            if cost_cache.look(up) == OBSTACLE || cost_cache.look(down) == OBSTACLE {
+                if profiling_enabled {
+                    profiler.end_call("jump::neighbor_checks");
+                }
+                return Some(next_pos);
             }
-            return Some(current_position);
+        } else {
+            let left = current_position
+                .checked_add_direction(Direction::Left)
+                .map(WorldPosition::from)
+                .ok()?;
+            let right = current_position
+                .checked_add_direction(Direction::Right)
+                .map(WorldPosition::from)
+                .ok()?;
+
+            if cost_cache.look(left) == OBSTACLE || cost_cache.look(right) == OBSTACLE {
+                if profiling_enabled {
+                    profiler.end_call("jump::neighbor_checks");
+                }
+                return Some(next_pos);
+            }
         }
     }
+
     if profiling_enabled {
         profiler.end_call("jump::neighbor_checks");
-        profiler.start_call("jump::recursive");
     }
 
-    let ret = jump(next_pos, first_position, direction, jump_cost, goals);
-    if profiling_enabled {
-        profiler.end_call("jump::recursive");
-    }
-    ret
+    // Recursively look ahead
+    jump(next_pos, first_position, direction, jump_cost, goals)
 }
-
-
 
 thread_local! {
     static PATHFINDER: std::cell::RefCell<PathFinder> = std::cell::RefCell::new(PathFinder::new());

@@ -89,10 +89,109 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                     10_000,
                     10_000,
                     goalPacked
-                  );
-                  const path = ephemeral(new ClockworkPath(js_path_to_multiroom_distance_map_origin(goalPacked[0], distanceMap)));
-                  return path.toArray();
-                
+                );
+                const path = ephemeral(new ClockworkPath(js_path_to_multiroom_distance_map_origin(goalPacked[0], distanceMap)));
+                return path.toArray();
+            }
+        },
+        {
+            name: "Bidirectional A*",
+            fn({ origins, goals }) {
+                // @ts-ignore
+                const startPacked = new Uint32Array([origins[0].__packedPos]);
+                // @ts-ignore
+                const goalPacked = new Uint32Array([goals[0].__packedPos]);
+                let path = js_bidirectional_astar_path(
+                    startPacked[0],
+                    goalPacked[0],
+                    getTerrainCostMatrix,
+                    10000,
+                    50
+                );
+                if (path) {
+                    return drawPath(path);
+                }
+                return [];
+            }
+        },
+        {
+            name: "Theta*",
+            fn({ origins, goals }) {
+                // @ts-ignore
+                const startPacked = new Uint32Array([origins[0].__packedPos]);
+                // @ts-ignore
+                const goalPacked = new Uint32Array([goals[0].__packedPos]);
+                let path = js_theta_star_path(
+                    startPacked[0],
+                    goalPacked[0],
+                    getTerrainCostMatrix,
+                    10000,
+                    50
+                );
+                if (path) {
+                    return drawPath(path);
+                }
+                return [];
+            }
+        },
+        {
+            name: "Lazy Theta*",
+            fn({ origins, goals }) {
+                // @ts-ignore
+                const startPacked = new Uint32Array([origins[0].__packedPos]);
+                // @ts-ignore
+                const goalPacked = new Uint32Array([goals[0].__packedPos]);
+                let path = js_lazy_theta_star_path(
+                    startPacked[0],
+                    goalPacked[0],
+                    getTerrainCostMatrix,
+                    10000,
+                    50
+                );
+                if (path) {
+                    return drawPath(path);
+                }
+                return [];
+            }
+        },
+        {
+            name: "D* Lite",
+            fn({ origins, goals }) {
+                let origin = origins[0];
+                let goal = goals[0];
+                let start = ephemeral.wasm.pack_position(origin);
+                let end = ephemeral.wasm.pack_position(goal);
+                let path = ephemeral.wasm.js_dstar_lite_path(
+                    start,
+                    end,
+                    getTerrainCostMatrix,
+                    10000,
+                    50
+                );
+                if (path) {
+                    return drawPath(path);
+                }
+                return [];
+            }
+        },
+        {
+            name: "Contraction Hierarchies",
+            fn({ origins, goals }) {
+                let origin = origins[0];
+                let goal = goals[0];
+                let start = ephemeral.wasm.pack_position(origin);
+                let end = ephemeral.wasm.pack_position(goal);
+                let path = ephemeral.wasm.js_contraction_hierarchies_path(
+                    start,
+                    end,
+                    getTerrainCostMatrix,
+                    10000,
+                    50
+                );
+                if (path) {
+                    return drawPath(path);
+                }
+                return [];
             }
         }
     ],
