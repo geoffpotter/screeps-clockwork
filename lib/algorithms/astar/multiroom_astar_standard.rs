@@ -207,7 +207,7 @@ pub fn astar_path_standard(
                 if let Some(cost_matrix) = next_matrix {
                     current_room_cost_matrix = cost_matrix;
                     current_room = neighbor_pos.room_name();
-                } else {
+            } else {
                     continue;
                 }
             }
@@ -216,7 +216,7 @@ pub fn astar_path_standard(
             let movement_cost = current_room_cost_matrix.get_local(xy);
             if movement_cost >= 255 {
                 continue;
-            }
+                }
 
             let neighbor_g_score = current_node.g_score.saturating_add(movement_cost as usize);
             if neighbor_g_score >= max_path_length {

@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Index, IndexMut, Sub};
 use screeps::{Direction, RoomCoordinate, RoomXY, ROOM_SIZE};
 
 /// Size of a single room in tiles
@@ -195,6 +195,44 @@ impl From<RoomXY> for LocalIndex {
         LocalIndex::new(value.x.u8(), value.y.u8())
     }
 }
+
+impl From<LocalIndex> for usize {
+    fn from(value: LocalIndex) -> Self {
+        value.index()
+    }
+}
+
+// Support indexing arrays and Vecs directly with a LocalIndex.
+impl<T> Index<LocalIndex> for [T] {
+    type Output = T;
+
+    fn index(&self, index: LocalIndex) -> &Self::Output {
+        &self[index.index()]
+    }
+}
+
+impl<T> IndexMut<LocalIndex> for [T] {
+    fn index_mut(&mut self, index: LocalIndex) -> &mut Self::Output {
+        &mut self[index.index()]
+    }
+}
+
+impl<T> Index<LocalIndex> for Vec<T> {
+    type Output = T;
+
+    fn index(&self, index: LocalIndex) -> &Self::Output {
+        &self[index.index()]
+    }
+}
+
+impl<T> IndexMut<LocalIndex> for Vec<T> {
+    fn index_mut(&mut self, index: LocalIndex) -> &mut Self::Output {
+        &mut self[index.index()]
+    }
+}
+
+
+
 
 #[cfg(test)]
 mod tests {

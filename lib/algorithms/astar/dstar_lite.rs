@@ -1,12 +1,15 @@
 use crate::datatypes::{
     CustomCostMatrix, PositionIndex, Path
 };
+use crate::log;
 use screeps::{Direction, RoomName, Position};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use js_sys::Function;
+
+const LOGGING_ENABLED: bool = false;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 struct Key {
@@ -114,6 +117,9 @@ impl DStarLite {
     }
     
     fn update_vertex(&mut self, pos: PositionIndex, get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>) {
+        if LOGGING_ENABLED {
+            log(&format!("Updating vertex at {:?}", pos));
+        }
         if pos != self.goal {
             let mut min_rhs = usize::MAX;
             let directions = [
@@ -132,17 +138,45 @@ impl DStarLite {
                     if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
                         let edge_cost = cost_matrix.get_local(next.local()) as usize;
                         if edge_cost < 255 {
-                            let cost = edge_cost + self.states.get(&next).copied().unwrap_or_default().g;
-                            min_rhs = min_rhs.min(cost);
+                            let next_state = self.states.entry(next).or_insert_with(NodeState::default);
+                            if next_state.g != usize::MAX {
+                                let total_cost = edge_cost + next_state.g;
+                                if total_cost < min_rhs {
+                                    min_rhs = total_cost;
+                                    if LOGGING_ENABLED {
+                                        log(&format!("Found better path through {:?} with cost {} (edge={}, g={})", 
+                                            next, total_cost, edge_cost, next_state.g));
+                                    }
+                                }
+                            } else if LOGGING_ENABLED {
+                                log(&format!("Skipping path through {:?} as its g value is infinity", next));
+                            }
                         }
                     }
                 }
             }
-            self.states.get_mut(&pos).unwrap().rhs = min_rhs;
+
+            let old_rhs = self.states.get(&pos).map(|s| s.rhs).unwrap_or(usize::MAX);
+            let state = self.states.entry(pos).or_insert_with(NodeState::default);
+            state.rhs = min_rhs;
+            if LOGGING_ENABLED {
+                log(&format!("Updating rhs from {} to {} for pos {:?}", old_rhs, min_rhs, pos));
+            }
         }
         
-        let key = self.calculate_key(pos);
-        self.queue.push(QueueState { pos, k: key });
+        let g = self.states.get(&pos).map(|s| s.g).unwrap_or(usize::MAX);
+        let rhs = self.states.get(&pos).map(|s| s.rhs).unwrap_or(usize::MAX);
+        if g != rhs {
+            let key = self.calculate_key(pos);
+            if LOGGING_ENABLED {
+                log(&format!("State inconsistent (g={}, rhs={}), adding to queue with key ({}, {})", 
+                    g, rhs, key.k1, key.k2));
+            }
+            self.queue.retain(|state| state.pos != pos);
+            self.queue.push(QueueState { pos, k: key });
+        } else if LOGGING_ENABLED {
+            log(&format!("State consistent (g=rhs={}), not adding to queue", g));
+        }
     }
     
     fn compute_shortest_path(
@@ -150,25 +184,68 @@ impl DStarLite {
         get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
         max_ops: &mut usize,
     ) -> bool {
+        // Initialize start state if needed
+        self.update_vertex(self.start, get_cost_matrix);
+        
         while let Some(top) = self.queue.peek() {
             let start_key = self.calculate_key(self.start);
             let start_state = self.states.get(&self.start).copied().unwrap_or_default();
             
-            if !(top.k < start_key || start_state.rhs != start_state.g) || *max_ops == 0 {
+            if LOGGING_ENABLED {
+                log(&format!("Top of queue: pos={:?}, k=({}, {})", top.pos, top.k.k1, top.k.k2));
+                log(&format!("Start state: g={}, rhs={}", start_state.g, start_state.rhs));
+            }
+            
+            // Only break if start is consistent AND its rhs value is not infinity
+            if start_state.rhs == start_state.g && start_state.rhs != usize::MAX {
+                if top.k >= start_key {
+                    if LOGGING_ENABLED {
+                        log(&format!("Breaking: start is consistent with valid cost (g=rhs={})", start_state.g));
+                    }
+                    break;
+                }
+            }
+            
+            if *max_ops == 0 {
+                if LOGGING_ENABLED {
+                    log("Breaking: max_ops reached 0");
+                }
                 break;
             }
             
             *max_ops -= 1;
-            let u = self.queue.pop().unwrap().pos;
-            let k_old = self.calculate_key(u);
-            let k_new = self.calculate_key(u);
+            let u = self.queue.pop().unwrap();
+            let k_new = self.calculate_key(u.pos);
+            
+            if LOGGING_ENABLED {
+                log(&format!("Processing pos={:?}, old_k=({}, {}), new_k=({}, {})", 
+                    u.pos, u.k.k1, u.k.k2, k_new.k1, k_new.k2));
+            }
 
-            if k_old < k_new {
-                self.queue.push(QueueState { pos: u, k: k_new });
+            if u.k < k_new {
+                if LOGGING_ENABLED {
+                    log("Key out of date, reinserting with new key");
+                }
+                self.queue.push(QueueState { pos: u.pos, k: k_new });
             } else {
-                let state = self.states.get(&u).copied().unwrap_or_default();
+                let state = self.states.get(&u.pos).copied().unwrap_or_default();
+                if LOGGING_ENABLED {
+                    log(&format!("Current state: g={}, rhs={}", state.g, state.rhs));
+                }
+                
                 if state.g > state.rhs {
-                    self.states.get_mut(&u).unwrap().g = state.rhs;
+                    if LOGGING_ENABLED {
+                        log("Node is overconsistent (g > rhs), making consistent");
+                    }
+                    // Make node consistent
+                    if let Some(state) = self.states.get_mut(&u.pos) {
+                        state.g = state.rhs;
+                        if LOGGING_ENABLED {
+                            log(&format!("Updated g to {}", state.g));
+                        }
+                    }
+                    
+                    // Update affected neighbors
                     let directions = [
                         Direction::Top,
                         Direction::TopRight,
@@ -180,16 +257,33 @@ impl DStarLite {
                         Direction::TopLeft,
                     ];
                     for &dir in &directions {
-                        if let Some(next) = u.r#move(dir) {
-                            self.update_vertex(next, get_cost_matrix);
-                            let key = self.calculate_key(next);
-                            self.queue.push(QueueState { pos: next, k: key });
+                        if let Some(next) = u.pos.r#move(dir) {
+                            if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
+                                let edge_cost = cost_matrix.get_local(next.local()) as usize;
+                                if edge_cost < 255 {
+                                    if LOGGING_ENABLED {
+                                        log(&format!("Updating neighbor at {:?}", next));
+                                    }
+                                    self.update_vertex(next, get_cost_matrix);
+                                }
+                            }
                         }
                     }
                 } else {
-                    let mut state = self.states.get(&u).copied().unwrap_or_default();
-                    state.g = usize::MAX;
-                    self.states.insert(u, state);
+                    if LOGGING_ENABLED {
+                        log("Node is underconsistent (g ≤ rhs), making overconsistent");
+                    }
+                    let old_g = state.g;
+                    // Make node overconsistent
+                    if let Some(state) = self.states.get_mut(&u.pos) {
+                        state.g = usize::MAX;
+                        if LOGGING_ENABLED {
+                            log(&format!("Set g to infinity for pos {:?}", u.pos));
+                        }
+                    }
+                    
+                    // Update node and affected neighbors
+                    let mut affected = vec![u.pos];
                     let directions = [
                         Direction::Top,
                         Direction::TopRight,
@@ -201,20 +295,42 @@ impl DStarLite {
                         Direction::TopLeft,
                     ];
                     for &dir in &directions {
-                        if let Some(next) = u.r#move(dir) {
-                            self.update_vertex(next, get_cost_matrix);
-                            let key = self.calculate_key(next);
-                            self.queue.push(QueueState { pos: next, k: key });
+                        if let Some(next) = u.pos.r#move(dir) {
+                            if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
+                                let edge_cost = cost_matrix.get_local(next.local()) as usize;
+                                if edge_cost < 255 {
+                                    if let Some(next_state) = self.states.get(&next) {
+                                        if old_g != usize::MAX && next_state.rhs == old_g + edge_cost {
+                                            if LOGGING_ENABLED {
+                                                log(&format!("Found affected neighbor at {:?} (rhs={}, old_g={})", 
+                                                    next, next_state.rhs, old_g));
+                                            }
+                                            affected.push(next);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                    self.update_vertex(u, get_cost_matrix);
-                    let key = self.calculate_key(u);
-                    self.queue.push(QueueState { pos: u, k: key });
+                    
+                    if LOGGING_ENABLED {
+                        log(&format!("Updating {} affected vertices", affected.len()));
+                    }
+                    for pos in affected {
+                        self.update_vertex(pos, get_cost_matrix);
+                    }
                 }
+            }
+            
+            // Periodically update start vertex to ensure it gets proper costs
+            if *max_ops % 100 == 0 {
+                self.update_vertex(self.start, get_cost_matrix);
             }
         }
 
-        *max_ops > 0
+        // Return true only if we found a valid path (start has valid rhs)
+        let start_state = self.states.get(&self.start).copied().unwrap_or_default();
+        start_state.rhs != usize::MAX && *max_ops > 0
     }
 }
 
@@ -232,7 +348,8 @@ pub fn dstar_lite_path(
         return None;
     }
     
-    let mut path = Vec::new();
+    // Extract path more efficiently
+    let mut path = Vec::with_capacity(max_path_length);
     let mut current = start;
     path.push(current);
     
@@ -242,8 +359,13 @@ pub fn dstar_lite_path(
         }
         remaining_ops -= 1;
         
-        let mut min_cost = usize::MAX;
-        let mut next_pos = None;
+        let current_g = match dstar.states.get(&current) {
+            Some(state) => state.g,
+            None => return None
+        };
+        
+        let mut best_next = None;
+        let mut best_g = usize::MAX;
         
         let directions = [
             Direction::Top,
@@ -255,28 +377,29 @@ pub fn dstar_lite_path(
             Direction::Left,
             Direction::TopLeft,
         ];
+        
+        // First pass: find the minimum g-value among neighbors
         for &dir in &directions {
             if let Some(next) = current.r#move(dir) {
-                if let Some(cost_matrix) = get_cost_matrix(next.room_name()) {
-                    let cost = cost_matrix.get_local(next.local()) as usize;
-                    if cost < 255 {
-                        if let Some(g) = dstar.states.get(&next).map(|s| s.g) {
-                            let total_cost = cost + g;
-                            if total_cost < min_cost {
-                                min_cost = total_cost;
-                                next_pos = Some(next);
-                            }
-                        }
+                if let Some(next_state) = dstar.states.get(&next) {
+                    if next_state.g < best_g {
+                        best_g = next_state.g;
+                        best_next = Some(next);
                     }
                 }
             }
         }
         
-        if let Some(next) = next_pos {
-            current = next;
-            path.push(current);
-        } else {
-            break;
+        match best_next {
+            Some(next) => {
+                // Verify this step actually makes progress
+                if best_g >= current_g {
+                    return None; // No progress possible
+                }
+                current = next;
+                path.push(current);
+            }
+            None => return None
         }
     }
     

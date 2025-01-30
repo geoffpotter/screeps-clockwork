@@ -1,5 +1,6 @@
 use crate::datatypes::{CustomCostMatrix, PositionIndex, LocalIndex, Path};
-use screeps::{Direction, RoomName, Position};
+use crate::log;
+use screeps::{CircleStyle, Direction, Position, RoomName, RoomVisual, RoomXY, RoomCoordinate};
 use std::collections::{BinaryHeap, HashMap};
 use std::cmp::Ordering;
 use std::convert::TryFrom;
@@ -26,17 +27,125 @@ impl PartialOrd for NodeInfo {
     }
 }
 
-fn heuristic(pos: PositionIndex, goal: PositionIndex) -> usize {
-    // Manhattan distance between rooms plus Manhattan distance within room
+fn diagonal_distance(pos: PositionIndex, goal: PositionIndex) -> usize {
+    // For room level movement, still use Manhattan since rooms are connected cardinally
     let (start_x, start_y) = pos.room().room_xy();
     let (goal_x, goal_y) = goal.room().room_xy();
     let room_distance = ((start_x as i32 - goal_x as i32).abs() + 
                        (start_y as i32 - goal_y as i32).abs()) as usize;
     
-    let local_distance = ((pos.local().x() as i32 - goal.local().x() as i32).abs() +
-                        (pos.local().y() as i32 - goal.local().y() as i32).abs()) as usize;
+    // For local movement, use Chebyshev distance since diagonal movement costs the same as cardinal in Screeps
+    let dx = (pos.local().x() as i32 - goal.local().x() as i32).abs() as usize;
+    let dy = (pos.local().y() as i32 - goal.local().y() as i32).abs() as usize;
     
-    room_distance * 50 + local_distance
+    // Use max instead of weighted sum since diagonal movement costs the same as cardinal
+    room_distance * 50 + dx.max(dy)
+}
+
+fn heuristic(pos: PositionIndex, goal: PositionIndex) -> usize {
+    diagonal_distance(pos, goal)
+}
+
+fn get_line_points(start: PositionIndex, goal: PositionIndex) -> Vec<PositionIndex> {
+    let start_local_x = start.local().x() as i32;
+    let start_local_y = start.local().y() as i32;
+    let goal_local_x = goal.local().x() as i32;
+    let goal_local_y = goal.local().y() as i32;
+    
+    let dx = (goal_local_x - start_local_x).abs();
+    let dy = (goal_local_y - start_local_y).abs();
+    
+    let sx = if start_local_x < goal_local_x { 1 } else { -1 };
+    let sy = if start_local_y < goal_local_y { 1 } else { -1 };
+    
+    let mut err = dx - dy;
+    let mut points = Vec::new();
+    let mut x = start_local_x;
+    let mut y = start_local_y;
+    let mut current_room = start.room();
+    
+    while x != goal_local_x || y != goal_local_y {
+        let mut next_room = current_room;
+        let mut next_x = x;
+        let mut next_y = y;
+        
+        let e2 = 2 * err;
+        if e2 > -dy {
+            err -= dy;
+            next_x += sx;
+            if next_x >= 50 {
+                next_room = current_room.move_direction(Direction::Right);
+                next_x -= 50;
+            } else if next_x < 0 {
+                next_room = current_room.move_direction(Direction::Left);
+                next_x += 50;
+            }
+        }
+        if e2 < dx {
+            err += dx;
+            next_y += sy;
+            if next_y >= 50 {
+                next_room = current_room.move_direction(Direction::Bottom);
+                next_y -= 50;
+            } else if next_y < 0 {
+                next_room = current_room.move_direction(Direction::Top);
+                next_y += 50;
+            }
+        }
+        
+        if let (Ok(x_coord), Ok(y_coord)) = (
+            RoomCoordinate::new(next_x as u8),
+            RoomCoordinate::new(next_y as u8)
+        ) {
+            if let Ok(local_index) = LocalIndex::try_from(RoomXY::new(x_coord, y_coord)) {
+                points.push(PositionIndex::new(next_room, local_index));
+                x = next_x;
+                y = next_y;
+                current_room = next_room;
+            } else {
+                return Vec::new();
+            }
+        } else {
+            return Vec::new();
+        }
+    }
+    
+    points
+}
+
+fn line_of_sight_cost(
+    start: PositionIndex,
+    goal: PositionIndex,
+    get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
+) -> Option<usize> {
+    let (start_x, start_y) = start.room().room_xy();
+    let (goal_x, goal_y) = goal.room().room_xy();
+    let room_dx = ((goal_x as i32 - start_x as i32).abs()) as usize;
+    let room_dy = ((goal_y as i32 - start_y as i32).abs()) as usize;
+    
+    if room_dx > 1 || room_dy > 1 {
+        return None;
+    }
+    
+    let points = get_line_points(start, goal);
+    if points.is_empty() {
+        return None;
+    }
+    
+    let mut total_cost = 0;
+    for pos in points {
+        if let Some(cost_matrix) = get_cost_matrix(pos.room_name()) {
+            let cost = cost_matrix.get_local(pos.local()) as usize;
+            if cost >= 255 {
+                return None;
+            }
+            total_cost += cost;
+        } else {
+            return None;
+        }
+    }
+    
+    Some(total_cost)
 }
 
 fn line_of_sight(
@@ -44,68 +153,7 @@ fn line_of_sight(
     goal: PositionIndex,
     get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
 ) -> bool {
-    let (start_x, start_y) = start.room().room_xy();
-    let (goal_x, goal_y) = goal.room().room_xy();
-    let room_dx = ((goal_x as i32 - start_x as i32).abs()) as usize;
-    let room_dy = ((goal_y as i32 - start_y as i32).abs()) as usize;
-    
-    if room_dx > 1 || room_dy > 1 {
-        return false;
-    }
-    
-    let start_local_x = start.local().x() as usize;
-    let start_local_y = start.local().y() as usize;
-    let goal_local_x = goal.local().x() as usize;
-    let goal_local_y = goal.local().y() as usize;
-    
-    let dx = goal_local_x as i32 - start_local_x as i32;
-    let dy = goal_local_y as i32 - start_local_y as i32;
-    
-    let n = dx.abs().max(dy.abs()) as usize;
-    if n == 0 {
-        return true;
-    }
-    
-    let x_inc = dx as f32 / n as f32;
-    let y_inc = dy as f32 / n as f32;
-    
-    let mut x = start_local_x as f32;
-    let mut y = start_local_y as f32;
-    
-    for _ in 0..n {
-        x += x_inc;
-        y += y_inc;
-        
-        let check_x = x.round() as usize;
-        let check_y = y.round() as usize;
-        
-        let check_pos = if check_x >= 50 {
-            let next_room = start.room().move_direction(Direction::Right);
-            PositionIndex::new(next_room, LocalIndex::new(check_x as u8 - 50, check_y as u8))
-        } else if check_x < 0 {
-            let next_room = start.room().move_direction(Direction::Left);
-            PositionIndex::new(next_room, LocalIndex::new(check_x as u8 + 50, check_y as u8))
-        } else if check_y >= 50 {
-            let next_room = start.room().move_direction(Direction::Bottom);
-            PositionIndex::new(next_room, LocalIndex::new(check_x as u8, check_y as u8 - 50))
-        } else if check_y < 0 {
-            let next_room = start.room().move_direction(Direction::Top);
-            PositionIndex::new(next_room, LocalIndex::new(check_x as u8, check_y as u8 + 50))
-        } else {
-            PositionIndex::new(start.room(), LocalIndex::new(check_x as u8, check_y as u8))
-        };
-        
-        if let Some(cost_matrix) = get_cost_matrix(check_pos.room_name()) {
-            let cost = cost_matrix.get_local(check_pos.local());
-            if cost >= 255 {
-                return false;
-            }
-        } else {
-            return false;
-        }
-    }
-    
-    true
+    line_of_sight_cost(start, goal, get_cost_matrix).is_some()
 }
 
 pub fn theta_star_path(
@@ -136,6 +184,13 @@ pub fn theta_star_path(
         }
         
         let current_pos = current.position;
+        // log(&format!("closing position: {:?}", current_pos));
+        // let viz = RoomVisual::new(Some(current_pos.room_name()));
+        // viz.circle(
+        //     current_pos.x().u8() as f32,
+        //     current_pos.y().u8() as f32,
+        //     Some(CircleStyle::default().radius(0.3).stroke("black").fill("black")),
+        // );
         if current_pos == goal {
             let mut path = Vec::new();
             let mut pos = current_pos;
@@ -145,7 +200,7 @@ pub fn theta_star_path(
                 pos = *parents.get(&pos).unwrap();
                 path.push(pos);
             }
-            
+            // log(&format!("Path found: {:?}", path));
             path.reverse();
             return Some(path);
         }
@@ -165,25 +220,40 @@ pub fn theta_star_path(
         
         for &dir in &directions {
             if let Some(neighbor) = current_pos.r#move(dir) {
+                // log(&format!("checking neighbor: {:?}", neighbor));
                 if closed.contains_key(&neighbor) {
                     continue;
                 }
                 
                 if let Some(cost_matrix) = get_cost_matrix(neighbor.room_name()) {
                     let cost = cost_matrix.get_local(neighbor.local()) as usize;
+                    // let viz = RoomVisual::new(Some(neighbor.room_name()));
                     if cost >= 255 {
+                        // viz.circle(
+                        //     neighbor.x().u8() as f32,
+                        //     neighbor.y().u8() as f32,
+                        //     Some(CircleStyle::default().radius(0.3).stroke("red").fill("red")),
+                        // );
                         continue;
                     }
-                    
+                    // viz.circle(
+                    //     neighbor.x().u8() as f32,
+                    //     neighbor.y().u8() as f32,
+                    //     Some(CircleStyle::default().radius(0.3).stroke("white").fill("white")),
+                    // );
                     let parent = *parents.get(&current_pos).unwrap();
                     let mut tentative_g_score = g_scores[&current_pos] + cost;
                     
                     if line_of_sight(parent, neighbor, &get_cost_matrix) {
                         let parent_g = g_scores[&parent];
-                        let direct_g = parent_g + heuristic(parent, neighbor);
-                        if direct_g < tentative_g_score {
-                            tentative_g_score = direct_g;
-                            parents.insert(neighbor, parent);
+                        if let Some(path_cost) = line_of_sight_cost(parent, neighbor, &get_cost_matrix) {
+                            let direct_g = parent_g + path_cost;
+                            if direct_g < tentative_g_score {
+                                tentative_g_score = direct_g;
+                                parents.insert(neighbor, parent);
+                            } else {
+                                parents.insert(neighbor, current_pos);
+                            }
                         } else {
                             parents.insert(neighbor, current_pos);
                         }
@@ -199,13 +269,21 @@ pub fn theta_star_path(
                     
                     g_scores.insert(neighbor, tentative_g_score);
                     let f_score = tentative_g_score + heuristic(neighbor, goal);
-                    
+                    // log(&format!("opening position: {:?}", neighbor));
+                    // let viz = RoomVisual::new(Some(neighbor.room_name()));
+                    // viz.circle(
+                    //     neighbor.x().u8() as f32,
+                    //     neighbor.y().u8() as f32,
+                    //     Some(CircleStyle::default().radius(0.3).stroke("white").fill("white")),
+                    // );
                     open.push(NodeInfo {
                         f_score,
                         g_score: tentative_g_score,
                         position: neighbor,
                         parent: *parents.get(&neighbor).unwrap(),
                     });
+                } else {
+                    log(&format!("no cost matrix for neighbor: {:?}", neighbor));
                 }
             }
         }
@@ -254,3 +332,4 @@ pub fn js_theta_star_path(
         Path::from(screeps_positions)
     })
 }
+

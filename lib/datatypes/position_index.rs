@@ -264,6 +264,16 @@ impl From<PositionIndex> for Position {
     }
 }
 
+impl From<u32> for PositionIndex {
+    fn from(packed: u32) -> Self {
+        let room_x = ((packed >> 24) & 0xFF) as u8;
+        let room_y = ((packed >> 16) & 0xFF) as u8;
+        let x = ((packed >> 8) & 0xFF) as u8;
+        let y = (packed & 0xFF) as u8;
+        Self::new(RoomIndex::new(room_x, room_y), LocalIndex::new(x, y))
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

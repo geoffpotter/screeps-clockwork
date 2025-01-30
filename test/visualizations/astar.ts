@@ -11,7 +11,8 @@ import {
   jasper_star,
   astar_path
 } from '../../src/index';
-import { CustomCostMatrix, Path } from '../../src/wasm/screeps_clockwork';
+import { fromPackedRoomName } from '../../src/utils/fromPacked';
+import { CustomCostMatrix, js_bidirectional_astar_path, js_dstar_lite_path, js_theta_star_path, Path } from '../../src/wasm/screeps_clockwork';
 
 import { cpuTime } from '../utils/cpuTime';
 import { FlagVisualizer } from './helpers/FlagVisualizer';
@@ -37,7 +38,7 @@ type CpuComparisonVisualizer = FlagVisualizer & {
   initialized: boolean;
 };
 
-function getTerrainCostMatrix(room: string, { plainCost, swampCost, wallCost }: { plainCost?: number; swampCost?: number; wallCost?: number; } = {}) {
+export function getTerrainCostMatrix(room: string, { plainCost, swampCost, wallCost }: { plainCost?: number; swampCost?: number; wallCost?: number; } = {}) {
   return ephemeral(clockworkGetTerrainCostMatrix(room, { plainCost, swampCost, wallCost }));
 }
 
@@ -87,6 +88,17 @@ export default [
         return;
       }
 
+      // do pathfinder for reference
+      let pathFinderPath: PathFinderPath;
+      pathFinderPath = PathFinder.search(targetFlag.pos, {pos: originFlag.pos, range: 0}, {
+        maxCost: 1500,
+        maxOps: 10000,
+        roomCallback: roomName => new PathFinder.CostMatrix(),
+        heuristicWeight: 1
+      });
+      visualizePath(pathFinderPath.path, "red");
+
+      // do distnace map
       const distanceMap = ephemeral(
         astarMultiroomDistanceMap([originFlag.pos], {
           costMatrixCallback: getTerrainCostMatrix,
@@ -97,7 +109,54 @@ export default [
 
       const path = ephemeral(distanceMap.pathToOrigin(targetFlag.pos));
       const pathArray = path.toArray();
-      visualizePath(pathArray);
+      visualizePath(pathArray, "green");
+
+
+      // do bidirectional astar
+      // @ts-ignore
+      const startPacked = new Uint32Array([originFlag.pos.__packedPos]);
+      // @ts-ignore
+      const goalPacked = new Uint32Array([targetFlag.pos.__packedPos]);
+      let path2 = js_bidirectional_astar_path(
+          startPacked[0],
+          goalPacked[0],
+          (roomName: number) => {
+            // console.log("Getting cost matrix for room in js: ", roomName);
+            let roomNameString = fromPackedRoomName(roomName);
+            let costMatrix = getTerrainCostMatrix(roomName as unknown as string, { plainCost: 1, swampCost: 5, wallCost: 255 });
+            return costMatrix;
+          },
+          10000,
+          10000
+      );
+
+      let cw_cost = 0;
+      let cw_length = 0;
+      let cw_path: ClockworkPath | null = null;
+      if (path2) {
+          cw_path = new ClockworkPath(path2);
+          visualizePath(cw_path.toArray(), "blue");
+          cw_length = cw_path.toArray().length;
+          for (let pos of cw_path.toArray()) {
+              let terrain = Game.map.getRoomTerrain(pos.roomName);
+              let terrain_type = terrain.get(pos.x, pos.y);
+              cw_cost += terrain_type === TERRAIN_MASK_SWAMP ? 5 : 1;
+          }
+      }
+
+      let reference_cost = 0;
+      for (let pos of pathArray) {
+          let terrain = Game.map.getRoomTerrain(pos.roomName);
+          let terrain_type = terrain.get(pos.x, pos.y);
+          reference_cost += terrain_type === TERRAIN_MASK_SWAMP ? 5 : 1;
+      }
+
+      console.log("distance map", pathArray)
+      console.log("bidirectional astar", cw_path?.toArray())
+      console.log("pathfinder", pathFinderPath.path)
+      console.log("distance map cost", reference_cost, pathArray.length)
+      console.log("bidirectional astar cost", cw_cost, cw_length)
+      console.log("pathfinder cost", pathFinderPath.cost, pathFinderPath.path.length)
     }
   },
   {

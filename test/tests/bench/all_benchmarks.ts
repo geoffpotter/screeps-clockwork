@@ -6,7 +6,7 @@ import { ClockworkPath, ephemeral, getTerrainCostMatrix, rust_pathfinder } from 
 import { 
     js_astar_multiroom_distance_map2, 
     js_astar_multiroom_path2, 
-    js_astar_multiroom_path3, 
+    js_astar_multiroom_distance_map3, 
     js_astar_path, 
     js_astar_path_heap, 
     js_astar_path_numeric, 
@@ -16,7 +16,8 @@ import {
     js_theta_star_path,
     js_lazy_theta_star_path,
     js_dstar_lite_path,
-    js_contraction_hierarchies_path
+    js_contraction_hierarchies_path,
+    js_path_to_multiroom_distance_map_origin_indexed
 } from "../../../src/wasm/screeps_clockwork";
 import { fromPackedRoomName } from "../../../src/utils/fromPacked";
 import { js_astar_multiroom_distance_map } from "../../../src/wasm/screeps_clockwork";
@@ -24,28 +25,29 @@ import { referenceGetRange } from "../referenceAlgorithms/getRange";
 import { visualizeDistanceMap } from "../../visualizations/helpers/visualizeDistanceMap";
 
 
+
 let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
     name: "Pathfinding",
     cases: [
-        // {
-        //     benchmarkName: "Same Room",
-        //     setup_args: () => {
-        //         let num_cases = 1000;
-        //         let positions = getBenchmarkPositions({
-        //             topLeftRoom: "W7N3",
-        //             bottomRightRoom: "W7N3",
-        //             positionsPerRoom: num_cases + 1
-        //         });
-        //         let cases: PathfindingBenchmarkArgs[] = [];
-        //         for (let i = 0; i < num_cases; i++) {
-        //             cases.push({
-        //                 origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
-        //                 goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
-        //             });
-        //         }
-        //         return cases;
-        //     },
-        // },
+        {
+            benchmarkName: "Same Room",
+            setup_args: () => {
+                let num_cases = 3;
+                let positions = getBenchmarkPositions({
+                    topLeftRoom: "W7N3",
+                    bottomRightRoom: "W7N3",
+                    positionsPerRoom: num_cases + 1
+                });
+                let cases: PathfindingBenchmarkArgs[] = [];
+                for (let i = 0; i < num_cases; i++) {
+                    cases.push({
+                        origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
+                        goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
+                    });
+                }
+                return cases;
+            },
+        },
         // {
         //     benchmarkName: "2 Rooms",
         //     setup_args: () => {
@@ -65,25 +67,25 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
         //         return cases;
         //     },
         // },
-        {
-            benchmarkName: "2x2 Rooms",
-            setup_args: () => {
-                let num_cases = 50;
-                let positions = getBenchmarkPositions({
-                    topLeftRoom: "W8N4",
-                    bottomRightRoom: "W7N3",
-                    positionsPerRoom: num_cases + 1
-                });
-                let cases: PathfindingBenchmarkArgs[] = [];
-                for (let i = 0; i < num_cases; i++) {
-                    cases.push({
-                        origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
-                        goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
-                    });
-                }
-                return cases;
-            },
-        },
+        // {
+        //     benchmarkName: "2x2 Rooms",
+        //     setup_args: () => {
+        //         let num_cases = 50;
+        //         let positions = getBenchmarkPositions({
+        //             topLeftRoom: "W8N4",
+        //             bottomRightRoom: "W7N3",
+        //             positionsPerRoom: num_cases + 1
+        //         });
+        //         let cases: PathfindingBenchmarkArgs[] = [];
+        //         for (let i = 0; i < num_cases; i++) {
+        //             cases.push({
+        //                 origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
+        //                 goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
+        //             });
+        //         }
+        //         return cases;
+        //     },
+        // },
         // {
         //     benchmarkName: "3x3 Rooms",
         //     setup_args: () => {
@@ -103,25 +105,25 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
         //         return cases;
         //     },
         // },
-        // {
-        //     benchmarkName: "5x5 Rooms",
-        //     setup_args: () => {
-        //         let num_cases = 20;
-        //         let positions = getBenchmarkPositions({
-        //             topLeftRoom: "W9N5",
-        //             bottomRightRoom: "W5N1",
-        //             positionsPerRoom: num_cases + 1
-        //         });
-        //         let cases: PathfindingBenchmarkArgs[] = [];
-        //         for (let i = 0; i < num_cases; i++) {
-        //             cases.push({
-        //                 origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
-        //                 goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
-        //             });
-        //         }
-        //         return cases;
-        //     },
-        // },
+        {
+            benchmarkName: "5x5 Rooms",
+            setup_args: () => {
+                let num_cases = 20;
+                let positions = getBenchmarkPositions({
+                    topLeftRoom: "W9N5",
+                    bottomRightRoom: "W5N1",
+                    positionsPerRoom: num_cases + 1
+                });
+                let cases: PathfindingBenchmarkArgs[] = [];
+                for (let i = 0; i < num_cases; i++) {
+                    cases.push({
+                        origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
+                        goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
+                    });
+                }
+                return cases;
+            },
+        },
     ],
     implementations: [
         {
@@ -188,54 +190,65 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                 
             }
         },
-        // {
-        //     name: "A* Multiroom Distance Map2",
-        //     fn: ({ origins, goals }) => {
-        //         // @ts-ignore
-        //         const startPacked = new Uint32Array([origins[0].__packedPos]);
-        //         // @ts-ignore
-        //         const goalPacked = new Uint32Array([goals[0].__packedPos]);
-        //         const raw_path = js_astar_multiroom_path2(
-        //             startPacked,
-        //             (roomName: number) => {
-        //                 // console.log("roomName", roomName);
-        //                 return getTerrainCostMatrix(fromPackedRoomName(roomName))
-        //             },
-        //             10_000,
-        //             10_000,
-        //             goalPacked
-        //         );
-        //         let path = ephemeral(new ClockworkPath(raw_path));
+        {
+            name: "A* Multiroom Distance Map2",
+            fn: ({ origins, goals }) => {
+                // @ts-ignore
+                const startPacked = new Uint32Array([origins[0].__packedPos]);
+                // @ts-ignore
+                const goalPacked = new Uint32Array([goals[0].__packedPos]);
+                const raw_path = js_astar_multiroom_path2(
+                    startPacked,
+                    (roomName: number) => {
+                        // console.log("roomName", roomName);
+                        return getTerrainCostMatrix(fromPackedRoomName(roomName))
+                    },
+                    10_000,
+                    10_000,
+                    goalPacked
+                );
+                let path = ephemeral(new ClockworkPath(raw_path));
                 
-        //         // console.log("astar2", path.length);
-        //         // drawPath(path.toArray(), "#0000FF");
-        //         return path.toArray().slice(1);
-        //     }
-        // },
-        // {
-        //     name: "A* Multiroom Distance Map3",
-        //     fn: ({ origins, goals }) => {
-        //         // @ts-ignore
-        //         const startPacked = new Uint32Array([origins[0].__packedPos]);
-        //         // @ts-ignore
-        //         const goalPacked = new Uint32Array([goals[0].__packedPos]);
-        //         const raw_path = js_astar_multiroom_path3(
-        //             startPacked,
-        //             (roomName: number) => {
-        //                 // console.log("roomName", roomName);
-        //                 return getTerrainCostMatrix(fromPackedRoomName(roomName))
-        //             },
-        //             10_000,
-        //             10_000,
-        //             goalPacked
-        //         );
-        //         let path = ephemeral(new ClockworkPath(raw_path));
-                
-        //         // console.log("astar3", path.length);
-        //         // drawPath(path.toArray(), "#0000FF");
-        //         return path.toArray().slice(1);
-        //     }
-        // },
+                // console.log("astar2", path.length);
+                // drawPath(path.toArray(), "#0000FF");
+                return path.toArray().slice(1);
+            }
+        },
+        {
+            name: "A* Multiroom Distance Map3",
+            fn: ({ origins, goals }) => {
+                // @ts-ignore
+                const startPacked = new Uint32Array([origins[0].__packedPos]);
+                // @ts-ignore
+                const goalPacked = new Uint32Array([goals[0].__packedPos]);
+                const distanceMap = js_astar_multiroom_distance_map3(
+                    startPacked,
+                    (roomName: number) => {
+                        // console.log("roomName", roomName);
+                        return getTerrainCostMatrix(fromPackedRoomName(roomName))
+                    },
+                    10_000,
+                    10_000,
+                    10_000,
+                    goalPacked
+                );
+                let path;
+                  try {
+                    path = ephemeral(new ClockworkPath(js_path_to_multiroom_distance_map_origin_indexed(goalPacked[0], distanceMap)));
+                  } catch (e) {
+                    distanceMap.get_rooms().forEach(room => {
+                        let room_name = fromPackedRoomName(room);
+                        // visualizeDistanceMap(room_name, distanceMap.get_room(room)!);
+                    });
+                    console.log("error in path reconstruction", e);
+                    return [];
+                  }
+
+                //   console.log("astar", path.length);
+                //   drawPath(path.toArray(), "#0000FF");
+                  return path.toArray().slice(1);
+            }
+        },
         // {
         //     name: "js_astar_path",
         //     fn: ({ origins, goals }) => {
@@ -261,184 +274,217 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
         //         return path.toArrayReversed();
         //     }
         // },
-        // {
-        //     name: "js_astar_path_heap",
-        //     fn: ({ origins, goals }) => {
-        //         const raw_path = js_astar_path_heap(
-        //             // @ts-ignore
-        //             origins[0].__packedPos,
-        //             // @ts-ignore
-        //             goals[0].__packedPos,
-        //             (roomName: number) => {
-        //                 // console.log("roomName", roomName);
-        //                 return getTerrainCostMatrix(fromPackedRoomName(roomName))
-        //             },
-        //             10_000,
-        //             10_000
-        //         );
-        //         if (!raw_path) {
-        //             return [];
-        //         }
-        //         let path = ephemeral(new ClockworkPath(raw_path));
+        {
+            name: "js_astar_path_heap",
+            fn: ({ origins, goals }) => {
+                const raw_path = js_astar_path_heap(
+                    // @ts-ignore
+                    origins[0].__packedPos,
+                    // @ts-ignore
+                    goals[0].__packedPos,
+                    (roomName: number) => {
+                        // console.log("roomName", roomName);
+                        return getTerrainCostMatrix(fromPackedRoomName(roomName))
+                    },
+                    10_000,
+                    10_000
+                );
+                if (!raw_path) {
+                    return [];
+                }
+                let path = ephemeral(new ClockworkPath(raw_path));
                 
-        //         // console.log("js_astar_path", origins[0], goals[0], path.toArrayReversed());
-        //         // drawPath(path.toArrayReversed(), "#0000FF");
-        //         return path.toArrayReversed();
-        //     }
-        // },
-        // {
-        //     name: "js_astar_path_numeric",
-        //     fn: ({ origins, goals }) => {
-        //         const raw_path = js_astar_path_numeric(
-        //             // @ts-ignore
-        //             origins[0].__packedPos,
-        //             // @ts-ignore
-        //             goals[0].__packedPos,
-        //             (roomName: number) => {
-        //                 // console.log("roomName", roomName);
-        //                 return getTerrainCostMatrix(fromPackedRoomName(roomName))
-        //             },
-        //             10_000,
-        //             10_000
-        //         );
-        //         if (!raw_path) {
-        //             return [];
-        //         }
-        //         let path = ephemeral(new ClockworkPath(raw_path));
+                // console.log("js_astar_path", origins[0], goals[0], path.toArrayReversed());
+                // drawPath(path.toArrayReversed(), "#0000FF");
+                return path.toArrayReversed().slice(1);
+            }
+        },
+        {
+            name: "js_astar_path_numeric",
+            fn: ({ origins, goals }) => {
+                const raw_path = js_astar_path_numeric(
+                    // @ts-ignore
+                    origins[0].__packedPos,
+                    // @ts-ignore
+                    goals[0].__packedPos,
+                    (roomName: number) => {
+                        // console.log("roomName", roomName);
+                        return getTerrainCostMatrix(fromPackedRoomName(roomName))
+                    },
+                    10_000,
+                    10_000
+                );
+                if (!raw_path) {
+                    return [];
+                }
+                let path = ephemeral(new ClockworkPath(raw_path));
                 
-        //         // console.log("js_astar_path", origins[0], goals[0], path.toArrayReversed());
-        //         // drawPath(path.toArrayReversed(), "#0000FF");
-        //         return path.toArrayReversed();
-        //     }
-        // },
-        // {
-        //     name: "js_astar_path_standard",
-        //     fn: ({ origins, goals }) => {
-        //         const raw_path = js_astar_path_standard(
-        //             // @ts-ignore
-        //             origins[0].__packedPos,
-        //             // @ts-ignore
-        //             goals[0].__packedPos,
-        //             (roomName: number) => {
-        //                 // console.log("roomName", roomName);
-        //                 return getTerrainCostMatrix(fromPackedRoomName(roomName))
-        //             },
-        //             10_000,
-        //             10_000
-        //         );
-        //         if (!raw_path) {
-        //             return [];
-        //         }
-        //         let path = ephemeral(new ClockworkPath(raw_path));
+                // console.log("js_astar_path", origins[0], goals[0], path.toArrayReversed());
+                // drawPath(path.toArrayReversed(), "#0000FF");
+                return path.toArrayReversed();
+            }
+        },
+        {
+            name: "js_astar_path_standard",
+            fn: ({ origins, goals }) => {
+                const raw_path = js_astar_path_standard(
+                    // @ts-ignore
+                    origins[0].__packedPos,
+                    // @ts-ignore
+                    goals[0].__packedPos,
+                    (roomName: number) => {
+                        // console.log("roomName", roomName);
+                        return getTerrainCostMatrix(fromPackedRoomName(roomName))
+                    },
+                    10_000,
+                    10_000
+                );
+                if (!raw_path) {
+                    return [];
+                }
+                let path = ephemeral(new ClockworkPath(raw_path));
                 
-        //         // console.log("js_astar_path", origins[0], goals[0], path.toArrayReversed());
-        //         // drawPath(path.toArrayReversed(), "#0000FF");
-        //         return path.toArrayReversed();
-        //     }
-        // },
+                // console.log("js_astar_path", origins[0], goals[0], path.toArrayReversed());
+                // drawPath(path.toArrayReversed(), "#0000FF");
+                return path.toArrayReversed();
+            }
+        },
 
+        {
+            name: "Bidirectional A*",
+            fn({ origins, goals }) {
+                // @ts-ignore
+                const startPacked = new Uint32Array([origins[0].__packedPos]);
+                // @ts-ignore
+                const goalPacked = new Uint32Array([goals[0].__packedPos]);
+                let path = js_bidirectional_astar_path(
+                    startPacked[0],
+                    goalPacked[0],
+                    (roomName: string) => {
+                        // console.log('Getting cost matrix for room in js: ', roomName);
+                        // let roomNameString = fromPackedRoomName(roomName);
+                        let costMatrix = getTerrainCostMatrix(roomName, { plainCost: 1, swampCost: 5, wallCost: 255 });
+                        // console.log('Cost matrix', costMatrix);
+                        return costMatrix;
+                    },
+                    10000,
+                    50
+                );
+                if (path) {
+                    
+                    let cw_path = new ClockworkPath(path);
+                    return cw_path.toArray().slice(1);
+                }
+                return [];
+            }
+        },
         // {
-        //     name: "Bidirectional A*",
+        //     name: "Theta*",
         //     fn({ origins, goals }) {
         //         // @ts-ignore
         //         const startPacked = new Uint32Array([origins[0].__packedPos]);
         //         // @ts-ignore
         //         const goalPacked = new Uint32Array([goals[0].__packedPos]);
-        //         let path = js_bidirectional_astar_path(
+        //         let path = js_theta_star_path(
         //             startPacked[0],
         //             goalPacked[0],
-        //             getTerrainCostMatrix,
-        //             10000,
-        //             50
+        //             (roomName: number) => {
+        //                 // console.log("Theta*", roomName);
+        //                 let roomNameString = fromPackedRoomName(roomName);
+        //                 let costMatrix = getTerrainCostMatrix(roomNameString, { plainCost: 1, swampCost: 5, wallCost: 255 });
+        //                 return costMatrix;
+        //             },
+        //             10000
         //         );
         //         if (path) {
-        //             return path.to_array();
+        //             let cw_path = new ClockworkPath(path);
+        //             return cw_path.toArray().slice(1);
         //         }
         //         return [];
         //     }
         // },
-        {
-            name: "Theta*",
-            fn({ origins, goals }) {
-                // @ts-ignore
-                const startPacked = new Uint32Array([origins[0].__packedPos]);
-                // @ts-ignore
-                const goalPacked = new Uint32Array([goals[0].__packedPos]);
-                let path = js_theta_star_path(
-                    startPacked[0],
-                    goalPacked[0],
-                    getTerrainCostMatrix,
-                    10000
-                );
-                if (path) {
-                    return path.to_array();
-                }
-                return [];
-            }
-        },
-        {
-            name: "Lazy Theta*",
-            fn({ origins, goals }) {
-                // @ts-ignore
-                const startPacked = new Uint32Array([origins[0].__packedPos]);
-                // @ts-ignore
-                const goalPacked = new Uint32Array([goals[0].__packedPos]);
-                let path = js_lazy_theta_star_path(
-                    startPacked[0],
-                    goalPacked[0],
-                    getTerrainCostMatrix,
-                    10000
-                );
-                if (path) {
-                    return path.to_array();
-                }
-                return [];
-            }
-        },
-        {
-            name: "D* Lite",
-            fn({ origins, goals }) {
-                let origin = origins[0];
-                let goal = goals[0];
-                // @ts-ignore
-                let start = origin.__packedPos;
-                // @ts-ignore
-                let end = goal.__packedPos;
-                let path = js_dstar_lite_path(
-                    start,
-                    end,
-                    getTerrainCostMatrix,
-                    10000,
-                    50
-                );
-                if (path) {
-                    return path.to_array();
-                }
-                return [];
-            }
-        },
-        {
-            name: "Contraction Hierarchies",
-            fn({ origins, goals }) {
-                let origin = origins[0];
-                let goal = goals[0];
-                // @ts-ignore
-                let start = origin.__packedPos;
-                // @ts-ignore
-                let end = goal.__packedPos;
-                let path = js_contraction_hierarchies_path(
-                    start,
-                    end,
-                    getTerrainCostMatrix,
-                    10000,
-                    50
-                );
-                if (path) {
-                    return path.to_array();
-                }
-                return [];
-            }
-        }
+        // {
+        //     name: "Lazy Theta*",
+        //     fn({ origins, goals }) {
+        //         // @ts-ignore
+        //         const startPacked = new Uint32Array([origins[0].__packedPos]);
+        //         // @ts-ignore
+        //         const goalPacked = new Uint32Array([goals[0].__packedPos]);
+        //         let path = js_lazy_theta_star_path(
+        //             startPacked[0],
+        //             goalPacked[0],
+        //             (roomName: number) => {
+        //                 // console.log("Lazy Theta*", roomName);
+        //                 let roomNameString = fromPackedRoomName(roomName);
+        //                 let costMatrix = getTerrainCostMatrix(roomNameString, { plainCost: 1, swampCost: 5, wallCost: 255 });
+        //                 return costMatrix;
+        //             },
+        //             10000
+        //         );
+        //         if (path) {
+        //             let cw_path = new ClockworkPath(path);
+        //             return cw_path.toArray().slice(1);
+        //         }
+        //         return [];
+        //     }
+        // },
+        // {
+        //     name: "D* Lite",
+        //     fn({ origins, goals }) {
+        //         let origin = origins[0];
+        //         let goal = goals[0];
+        //         // @ts-ignore
+        //         let start = origin.__packedPos;
+        //         // @ts-ignore
+        //         let end = goal.__packedPos;
+        //         let path = js_dstar_lite_path(
+        //             start,
+        //             end,
+        //             (roomName: number) => {
+        //                 // console.log("D* Lite", roomName);
+        //                 let roomNameString = fromPackedRoomName(roomName);
+        //                 let costMatrix = getTerrainCostMatrix(roomNameString, { plainCost: 1, swampCost: 5, wallCost: 255 });
+        //                 return costMatrix;
+        //             },
+        //             10000,
+        //             50
+        //         );
+        //         if (path) {
+        //             let cw_path = new ClockworkPath(path);
+        //             return cw_path.toArray().slice(1);
+        //         }
+        //         return [];
+        //     }
+        // },
+        // {
+        //     name: "Contraction Hierarchies",
+        //     fn({ origins, goals }) {
+        //         let origin = origins[0];
+        //         let goal = goals[0];
+        //         // @ts-ignore
+        //         let start = origin.__packedPos;
+        //         // @ts-ignore
+        //         let end = goal.__packedPos;
+        //         let path = js_contraction_hierarchies_path(
+        //             start,
+        //             end,
+        //             (roomName: number) => {
+        //                 // console.log("Contraction Hierarchies", roomName);
+        //                 let roomNameString = fromPackedRoomName(roomName);
+        //                 let costMatrix = getTerrainCostMatrix(roomNameString, { plainCost: 1, swampCost: 5, wallCost: 255 });
+        //                 // console.log("Contraction Hierarchies", roomNameString, costMatrix);
+        //                 return costMatrix;
+        //             },
+        //             10000,
+        //             50
+        //         );
+        //         if (path) {
+        //             let cw_path = new ClockworkPath(path);
+        //             return cw_path.toArray();
+        //         }
+        //         return [];
+        //     }
+        // }
     ],
     validate(result, referenceResult, args) {
         // if (result.length > referenceResult.length) {
@@ -504,8 +550,10 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
 
 let benchmark = new Benchmark(suite);
 
+let result_found = false;
 export function runBenchmarks() {
-    if (benchmark.run()) {
+    if (!result_found && benchmark.run()) {
+        result_found = true;
         benchmark.displayResults()
         // printBenchmarkResults(results);
     }

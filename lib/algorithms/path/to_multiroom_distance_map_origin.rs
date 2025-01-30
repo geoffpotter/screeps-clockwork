@@ -1,6 +1,7 @@
 use crate::algorithms::map::corresponding_room_edge;
 use crate::algorithms::map::neighbors_without_edges;
 use crate::datatypes::MultiroomDistanceMap;
+use crate::datatypes::MultiroomDistanceMapIndexed;
 use crate::datatypes::MultiroomGenericMap;
 use crate::datatypes::MultiroomNumericMap;
 use crate::datatypes::MultiroomNumericMapUsize;
@@ -39,6 +40,12 @@ impl MultiroomDistanceMapTrait for MultiroomGenericMap<usize> {
 }
 
 impl MultiroomDistanceMapTrait for MultiroomNumericMap<usize> {
+    fn get(&self, pos: Position) -> usize {
+        self.get(PositionIndex::from(pos))
+    }
+}
+
+impl MultiroomDistanceMapTrait for MultiroomDistanceMapIndexed {
     fn get(&self, pos: Position) -> usize {
         self.get(PositionIndex::from(pos))
     }
@@ -119,3 +126,16 @@ pub fn js_path_to_multiroom_distance_map_origin(
     }
 }
 
+#[wasm_bindgen]
+pub fn js_path_to_multiroom_distance_map_origin_indexed(
+    start: u32,
+    distance_map: &MultiroomDistanceMapIndexed,
+) -> Path {
+    match path_to_multiroom_distance_map_origin(Position::from_packed(start), distance_map) {
+        Ok(path) => path,
+        Err(e) => throw_str(&format!(
+            "Error calculating path to multiroom distance map origin: {}",
+            e
+        )),
+    }
+}

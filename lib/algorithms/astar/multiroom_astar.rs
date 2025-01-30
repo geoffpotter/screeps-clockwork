@@ -1,10 +1,10 @@
 use crate::datatypes::{
-    ClockworkCostMatrix, CustomCostMatrix, LocalIndex, MultiroomGenericMap, OptionalCache, PositionIndex, RoomIndex
+    ClockworkCostMatrix, CustomCostMatrix, IndexedRoomDataCache, LocalIndex, MultiroomGenericMap, OptionalCache, PositionIndex, RoomDataCache, RoomIndex
 };
 use crate::log;
 use crate::utils::set_panic_hook;
 use lazy_static::lazy_static;
-use screeps::{CircleStyle, Direction, RoomCoordinate, RoomName, RoomVisual, RoomXY};
+use screeps::{CircleStyle, Direction, RoomCoordinate, RoomName, RoomVisual, RoomXY, LocalCostMatrix};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -15,28 +15,23 @@ use screeps::Position;
 use screeps::game::cpu;
 use crate::datatypes::Path;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
-struct NodeInfo {
-    // g_score is the cost of the path from start to this node
+#[derive(Copy, Clone)]
+struct State {
     g_score: usize,
-    // h_score is the estimated cost from this node to the goal
-    h_score: usize,
-    steps: usize,
     position: PositionIndex,
     parent: PositionIndex,
     open_direction: Option<Direction>,
+    room_key: usize,
 }
 
-
-impl Default for NodeInfo {
+impl Default for State {
     fn default() -> Self {
         Self {
             g_score: usize::MAX,
-            h_score: usize::MAX,
-            steps: usize::MAX,
             position: PositionIndex::new(RoomIndex::new(0, 0), LocalIndex::new(0, 0)),
             parent: PositionIndex::new(RoomIndex::new(0, 0), LocalIndex::new(0, 0)),
             open_direction: None,
+            room_key: 0,
         }
     }
 }
@@ -125,41 +120,30 @@ pub fn astar_path(
     max_path_length: usize,
 ) -> Option<Vec<PositionIndex>> {
     set_panic_hook();
-    // Priority queue implemented as buckets of positions with same f_score
-    // where f_score = g_score + h_score
-    let mut open_by_f_score: Vec<Vec<PositionIndex>> = vec![Default::default()];
+    
+    // Use bucket-based open list
+    let mut open_by_f_score: Vec<Vec<State>> = vec![Default::default()];
     let mut current_f_score = 0;
     let mut visited_nodes = 0;
-    let mut node_info = MultiroomGenericMap::<NodeInfo>::new();
-    let cost_matrices = OptionalCache::new(|room: RoomName| get_cost_matrix(room));
+    
+    let mut cached_room_data = IndexedRoomDataCache::new(8, get_cost_matrix); // Cache up to 8 rooms
 
     // Initialize start node
     let start_h_score = heuristic(start, goal);
     for i in 0..start_h_score {
         open_by_f_score.push(Default::default());
     }
-    open_by_f_score[start_h_score].push(start);
-
-    let mut current_room = start.room();
-    let mut current_room_cost_matrix = if let Some(cost_matrix) = cost_matrices.get_or_create(current_room.room_name()) {
-        cost_matrix
-    } else {
-        log(&format!("No cost matrix for room: {:?}", current_room));
-        return None; // Cannot plan path without a cost matrix
-    };
-
-    let mut current_room_distance_map = node_info.get_or_create_room_map(current_room);
-    current_room_distance_map.set(start.local(), NodeInfo {
-        g_score: 0,  // Cost from start to start is 0
-        h_score: start_h_score,
-        steps: 0,
+    
+    let start_room_key = cached_room_data.get_room_key(start.room())?;
+    open_by_f_score[start_h_score].push(State {
+        g_score: 0,
         position: start,
         parent: start,
         open_direction: None,
+        room_key: start_room_key,
     });
-    // log(&format!("min_f_score: {:?}, open_by_f_score.len(): {:?}", current_f_score, open_by_f_score.len()));
+
     while current_f_score < open_by_f_score.len() {
-        // log(&format!("min_f_score: {:?}, open_by_f_score.len(): {:?}", current_f_score, open_by_f_score.len()));
         // Find next non-empty bucket
         while current_f_score < open_by_f_score.len() && open_by_f_score[current_f_score].is_empty() {
             current_f_score += 1;
@@ -168,124 +152,96 @@ pub fn astar_path(
             break;
         }
 
-        let current_pos = open_by_f_score[current_f_score].pop().unwrap();
-        
-        if current_pos.room() != current_room {
-            current_room = current_pos.room();
-            current_room_cost_matrix = if let Some(cost_matrix) = cost_matrices.get_or_create(current_room.room_name()) {
-                cost_matrix
-            } else {
-                log(&format!("No cost matrix for room: {:?}", current_room));
-                return None; // Cannot plan path without a cost matrix
-            };
-            current_room_distance_map = node_info.get_or_create_room_map(current_room);
-        }
-
-        // let viz = RoomVisual::new(Some(current_pos.room_name()));
-        // viz.circle(current_pos.x().u8() as f32, current_pos.y().u8() as f32, Some(CircleStyle::default().radius(0.3).fill("black")));
-        // log(&format!("current_pos: {:?}", current_pos));
+        let current = open_by_f_score[current_f_score].pop().unwrap();
         visited_nodes += 1;
         if visited_nodes >= max_ops {
             return None;
         }
 
-        let current_node = current_room_distance_map.get(current_pos.local()).unwrap();
-        let current_g_score = current_node.g_score;
-        let current_steps = current_node.steps;
-        let current_open_direction = current_node.open_direction;
+        let current_pos = current.position;
+        let current_g_score = current.g_score;
+        let current_open_direction = current.open_direction;
+        let current_room_key = current.room_key;
 
-        // log(&format!("current_pos: {:?}, goal: {:?}, current_g_score: {:?}, current_steps: {:?}, current_open_direction: {:?}, current f_score: {:?}", current_pos, goal, current_g_score, current_steps, current_open_direction, current_f_score));
         // Check if we've reached the goal
         if current_pos == goal {
-            // Reconstruct path by following parent pointers
+            // Reconstruct path
             let mut path = Vec::new();
-            let mut current = current_pos;
-            
-            while current != start {
-                path.push(current);
-                if let Some(info) = node_info.get(current) {
-                    current = info.parent;
+            let mut current_state = current;
+            while current_state.position != start {
+                path.push(current_state.position);
+                // Find parent in the same room if possible
+                if let Some(parent_state) = open_by_f_score.iter().flatten()
+                    .find(|s| s.position == current_state.parent) {
+                    current_state = *parent_state;
                 } else {
-                    log(&format!("Path reconstruction failed"));
-                    return None; // Path reconstruction failed
+                    return None;
                 }
             }
-            
+            path.push(start);
             path.reverse();
             return Some(path);
-        }
-
-        // If this node's f_score is greater than min_f_score, we need to requeue it
-        let current_f_score = current_g_score + current_node.h_score;
-        if current_f_score > current_f_score {
-            // Ensure we have a bucket for this f_score
-            while open_by_f_score.len() <= current_f_score {
-                open_by_f_score.push(Default::default());
-            }
-            // log(&format!("requeueing node {:?}", current_pos));
-            open_by_f_score[current_f_score].push(current_pos);
-            continue;
         }
 
         // Explore neighbors
         for direction in next_directions(current_open_direction) {
             let Some(neighbor_pos) = current_pos.r#move(*direction) else { continue; };
 
-            // Update cost matrix if we've entered a new room
-            if neighbor_pos.room() != current_room {
-                let next_matrix = cost_matrices.get_or_create(neighbor_pos.room_name());
-                if let Some(cost_matrix) = next_matrix {
-                    current_room_cost_matrix = cost_matrix;
-                    current_room = neighbor_pos.room();
-                } else {
-                    continue;
+            // Get or create room key for neighbor
+            let neighbor_room_key = if neighbor_pos.room_name() == current_pos.room_name() {
+                current_room_key
+            } else {
+                match cached_room_data.get_room_key(neighbor_pos.room()) {
+                    Some(key) => key,
+                    None => continue, // Room cache full, skip this neighbor
                 }
-                current_room_distance_map = node_info.get_or_create_room_map(current_room);
-            }
+            };
 
             // Get movement cost to neighbor
-            let xy = neighbor_pos.local();
-            let movement_cost = current_room_cost_matrix.get_local(xy);
-            if movement_cost >= 255 {
-                continue; // Impassable terrain
-            }
+            let terrain_cost = if let Some(cost_matrix) = &cached_room_data[neighbor_room_key].cost_matrix {
+                let x_coord = RoomCoordinate::new(neighbor_pos.local().x()).unwrap();
+                let y_coord = RoomCoordinate::new(neighbor_pos.local().y()).unwrap();
+                let xy = RoomXY::new(x_coord, y_coord);
+                let cost = cost_matrix.get(xy);
+                if cost >= 255 {
+                    continue; // Impassable terrain
+                }
+                cost
+            } else {
+                continue; // Room is blocked
+            };
 
             // Calculate scores for neighbor
-            let neighbor_g_score = current_g_score.saturating_add(movement_cost as usize);
+            let neighbor_g_score = current_g_score.saturating_add(terrain_cost as usize);
             if neighbor_g_score >= max_path_length {
                 continue;
             }
 
             // Check if this path to neighbor is better than any previous path
-            if let Some(existing_neighbor) = current_room_distance_map.get(neighbor_pos.local()) {
-                if neighbor_g_score >= existing_neighbor.g_score {
-                    // log(&format!("skipping neighbor {:?}", neighbor_pos));
-                    // log(&format!("skipping neighbor_g_score: {:?}, existing_neighbor.g_score: {:?}", neighbor_g_score, existing_neighbor.g_score));
-                    continue; // This path to neighbor is not better than existing path
-                }
+            let is_better_path = open_by_f_score.iter().flatten()
+                .find(|s| s.position == neighbor_pos)
+                .map_or(true, |existing| neighbor_g_score < existing.g_score);
+
+            if !is_better_path {
+                continue;
             }
 
             let neighbor_h_score = heuristic(neighbor_pos, goal);
             let neighbor_f_score = neighbor_g_score + neighbor_h_score;
-            
-            // Ensure we have a bucket for this f_score
+
+            // Ensure we have enough buckets
             while open_by_f_score.len() <= neighbor_f_score {
                 open_by_f_score.push(Default::default());
             }
 
-            // let viz = RoomVisual::new(Some(neighbor_pos.room_name()));
-            // viz.circle(neighbor_pos.x().u8() as f32, neighbor_pos.y().u8() as f32, Some(CircleStyle::default().radius(0.3).fill("white")));
-            // log(&format!("adding neighbor {:?}, f_score: {:?}", neighbor_pos, neighbor_f_score));
             // Add neighbor to open set
-            current_room_distance_map.set(neighbor_pos.local(), NodeInfo {
+            open_by_f_score[neighbor_f_score].push(State {
                 g_score: neighbor_g_score,
-                h_score: neighbor_h_score,
-                steps: current_steps + 1,
                 position: neighbor_pos,
                 parent: current_pos,
                 open_direction: Some(*direction),
+                room_key: neighbor_room_key,
             });
-            open_by_f_score[neighbor_f_score].push(neighbor_pos);
         }
     }
 

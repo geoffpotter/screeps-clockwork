@@ -223,8 +223,8 @@ pub fn astar_path_heap(
             let xy = neighbor_pos.local();
             let movement_cost = current_room_cost_matrix.get_local(xy);
             if movement_cost >= 255 {
-                continue; // Impassable terrain
-            }
+                    continue; // Impassable terrain
+                }
 
             // Calculate scores for neighbor
             let neighbor_g_score = current_g_score.saturating_add(movement_cost as usize);

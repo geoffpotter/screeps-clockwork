@@ -1,6 +1,6 @@
-use screeps::{LocalCostMatrix, LocalRoomTerrain, Position, RoomName, RoomTerrain, Terrain};
+use screeps::{LocalCostMatrix, LocalRoomTerrain, Position, RoomCoordinate, RoomName, RoomTerrain, RoomXY, Terrain};
 use wasm_bindgen::{prelude::*, throw_str};
-
+use crate::log;
 use crate::{datatypes::{ClockworkCostMatrix, OptionalCache}};
 
 #[wasm_bindgen]
@@ -15,6 +15,7 @@ pub fn get_terrain_cost_matrix(
     let wall_cost = wall_cost.unwrap_or(255);
     let room_name = RoomName::from_packed(room_name);
     let terrain = RoomTerrain::new(room_name);
+    // log(&format!("get_terrain_cost_matrix: {:?}", room_name));
     if terrain.is_none() {
         throw_str(&format!("Invalid room name: {}", room_name));
     }
@@ -27,6 +28,6 @@ pub fn get_terrain_cost_matrix(
             Terrain::Swamp => swamp_cost,
         };
     }
-
+    // log(&format!("get_terrain_cost_matrix: {:?}", local_cost_matrix.get(RoomXY::new(RoomCoordinate::new(20).unwrap(), RoomCoordinate::new(6).unwrap()))));
     ClockworkCostMatrix::from(local_cost_matrix)
 }

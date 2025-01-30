@@ -8,6 +8,16 @@ use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use js_sys::Function;
 
+const ENABLE_LOGGING: bool = false;
+
+macro_rules! log {
+    ($($arg:tt)*) => {
+        if ENABLE_LOGGING {
+            web_sys::console::log_1(&format!($($arg)*).into());
+        }
+    };
+}
+
 #[derive(Clone, Debug)]
 struct ShortcutEdge {
     from: PositionIndex,
@@ -25,10 +35,12 @@ struct ContractionHierarchy {
 
 impl ContractionHierarchy {
     fn new() -> Self {
+        log!("Creating new ContractionHierarchy");
         Self::default()
     }
     
     fn add_shortcut(&mut self, edge: ShortcutEdge) {
+        log!("Adding shortcut: {:?} -> {:?} (cost: {})", edge.from, edge.to, edge.cost);
         self.shortcuts.entry(edge.from)
             .or_default()
             .push(edge);
@@ -39,6 +51,7 @@ impl ContractionHierarchy {
         node: PositionIndex,
         get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
     ) {
+        log!("Contracting node: {:?}", node);
         let mut incoming = Vec::new();
         let mut outgoing = Vec::new();
         
@@ -68,6 +81,8 @@ impl ContractionHierarchy {
             }
         }
         
+        log!("Found {} incoming and {} outgoing edges", incoming.len(), outgoing.len());
+        
         // Add shortcuts between neighbors
         for (in_node, in_cost) in incoming {
             for (out_node, out_cost) in &outgoing {
@@ -82,6 +97,8 @@ impl ContractionHierarchy {
                     path: vec![in_node, node, *out_node],
                 };
                 
+                log!("Creating shortcut: {:?} -> {:?} through {:?} (cost: {})", 
+                    in_node, out_node, node, shortcut.cost);
                 self.add_shortcut(shortcut);
             }
         }
@@ -92,9 +109,14 @@ impl ContractionHierarchy {
         nodes: Vec<PositionIndex>,
         get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
     ) {
+        log!("Building hierarchy with {} initial nodes", nodes.len());
         let mut remaining_nodes: HashSet<_> = nodes.into_iter().collect();
         
+        let mut iteration = 0;
         while !remaining_nodes.is_empty() {
+            iteration += 1;
+            log!("Hierarchy building iteration {}, {} nodes remaining", iteration, remaining_nodes.len());
+            
             let mut independent_set = Vec::new();
             let mut visited = HashSet::new();
             
@@ -123,11 +145,14 @@ impl ContractionHierarchy {
                 }
             }
             
+            log!("Found independent set of size {}", independent_set.len());
+            
             for node in &independent_set {
                 self.contract_node(*node, get_cost_matrix);
                 remaining_nodes.remove(node);
             }
         }
+        log!("Hierarchy building complete");
     }
     
     fn find_path(
@@ -136,6 +161,8 @@ impl ContractionHierarchy {
         goal: PositionIndex,
         get_cost_matrix: &impl Fn(RoomName) -> Option<CustomCostMatrix>,
     ) -> Option<Vec<PositionIndex>> {
+        log!("Finding path from {:?} to {:?}", start, goal);
+        
         #[derive(Copy, Clone, Eq, PartialEq)]
         struct State {
             cost: usize,
@@ -175,19 +202,27 @@ impl ContractionHierarchy {
         forward_paths.insert(start, vec![start]);
         backward_paths.insert(goal, vec![goal]);
         
+        let mut iterations = 0;
         let mut best_cost = usize::MAX;
         let mut best_meeting_node = None;
         
         while !forward_queue.is_empty() && !backward_queue.is_empty() {
+            iterations += 1;
+            if iterations % 1000 == 0 {
+                log!("Search iteration {}, best cost: {}", iterations, best_cost);
+            }
+            
             // Forward search
             if let Some(State { cost, position }) = forward_queue.pop() {
                 if cost > best_cost {
+                    log!("Forward search exceeded best cost");
                     break;
                 }
                 
                 if backward_distances.contains_key(&position) {
                     let total_cost = cost + backward_distances[&position];
                     if total_cost < best_cost {
+                        log!("Found better path through {:?} with cost {}", position, total_cost);
                         best_cost = total_cost;
                         best_meeting_node = Some(position);
                     }
@@ -263,13 +298,16 @@ impl ContractionHierarchy {
             }
         }
         
+        log!("Search completed after {} iterations", iterations);
         if let Some(meeting_node) = best_meeting_node {
+            log!("Path found through meeting node {:?} with cost {}", meeting_node, best_cost);
             let mut path = forward_paths[&meeting_node].clone();
             let mut backward_path = backward_paths[&meeting_node].clone();
             backward_path.reverse();
             path.extend(backward_path.into_iter().skip(1));
             Some(path)
         } else {
+            log!("No path found");
             None
         }
     }
@@ -282,6 +320,8 @@ pub fn contraction_hierarchies_path(
     max_ops: usize,
     max_path_length: usize,
 ) -> Option<Vec<PositionIndex>> {
+    log!("Starting pathfinding from {:?} to {:?}", start, goal);
+    
     // Build initial node set (room entry/exit points)
     let mut nodes = HashSet::new();
     nodes.insert(start);
@@ -290,6 +330,7 @@ pub fn contraction_hierarchies_path(
     // Add border nodes
     let rooms = HashSet::from([start.room(), goal.room()]);
     for room in rooms {
+        log!("Processing room {:?}", room);
         // Add nodes along x borders (y = 0 and y = 49)
         for y in [0, 49] {
             for x in 0..50 {
@@ -314,9 +355,14 @@ pub fn contraction_hierarchies_path(
         }
     }
     
+    log!("Created initial node set with {} nodes", nodes.len());
+    
     let mut ch = ContractionHierarchy::new();
     ch.build_hierarchy(nodes.into_iter().collect(), &get_cost_matrix);
-    ch.find_path(start, goal, &get_cost_matrix)
+    let result = ch.find_path(start, goal, &get_cost_matrix);
+    
+    log!("Pathfinding complete, found path: {}", result.is_some());
+    result
 }
 
 #[wasm_bindgen]

@@ -17,7 +17,9 @@ mod multiroom_generic_map;
 mod numeric_map;
 mod multiroom_numeric_map;
 mod optional_cache;
-
+mod room_data_cache_indexed;
+mod distance_map_indexed;
+mod multiroom_distance_map_indexed;
 mod map_benchmark;
 
 
@@ -40,5 +42,8 @@ pub use numeric_map::NumericMap;
 pub use multiroom_generic_map::MultiroomGenericMap;
 pub use multiroom_numeric_map::{MultiroomNumericMap, JsMultiroomNumericMap};
 pub use optional_cache::OptionalCache;
-
+pub use room_data_cache_indexed::RoomDataCache as IndexedRoomDataCache;
+pub use distance_map_indexed::DistanceMapIndexed;
 pub use multiroom_numeric_map::MultiroomNumericMapUsize;
+pub use multiroom_distance_map_indexed::MultiroomDistanceMapIndexed;
+

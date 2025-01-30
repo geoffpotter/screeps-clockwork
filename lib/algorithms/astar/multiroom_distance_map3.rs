@@ -1,25 +1,18 @@
 use crate::algorithms::astar::metrics::PathfindingMetrics;
-use crate::algorithms::path::to_multiroom_distance_map_origin::path_to_multiroom_distance_map_origin;
-use crate::datatypes::{
-    ClockworkCostMatrix, CustomCostMatrix, JsMultiroomNumericMap, LocalIndex, MultiroomNumericMap, OptionalCache, Path, PositionIndex, RoomIndex
-};
+use crate::algorithms::map::{corresponding_room_edge, next_directions};
+use crate::datatypes::{CustomCostMatrix, MultiroomDistanceMapIndexed, PositionIndex};
+use crate::datatypes::IndexedRoomDataCache;
 use crate::log;
 use crate::utils::set_panic_hook;
-use lazy_static::lazy_static;
 use screeps::Direction;
-use screeps::Position;
+
 use screeps::RoomName;
+use std::collections::HashSet;
 use std::convert::TryFrom;
-use std::collections::VecDeque;
+use std::ops::Fn;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::throw_val;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
-struct State {
-    position: PositionIndex,
-    g_score: usize,
-    open_direction: Option<Direction>,
-}
 
 fn heuristic(position: PositionIndex, goals: &[PositionIndex]) -> usize {
     goals.iter()
@@ -28,211 +21,218 @@ fn heuristic(position: PositionIndex, goals: &[PositionIndex]) -> usize {
         .unwrap_or(0) as usize
 }
 
-lazy_static! {
-    static ref DIRECTION_LOOKUP: [Vec<Direction>; 9] = [
-        // Any direction
-        vec![
-            Direction::Top,
-            Direction::TopRight,
-            Direction::Right,
-            Direction::BottomRight,
-            Direction::Bottom,
-            Direction::BottomLeft,
-            Direction::Left,
-            Direction::TopLeft,
-        ],
-        // Direction::Top
-        vec![Direction::Top, Direction::TopRight, Direction::TopLeft],
-        // Direction::TopRight
-        vec![
-            Direction::TopRight,
-            Direction::Top,
-            Direction::Right,
-            Direction::BottomRight,
-            Direction::TopLeft,
-        ],
-        // Direction::Right
-        vec![
-            Direction::Right,
-            Direction::BottomRight,
-            Direction::TopRight,
-        ],
-        // Direction::BottomRight
-        vec![
-            Direction::BottomRight,
-            Direction::Right,
-            Direction::Bottom,
-            Direction::TopRight,
-            Direction::BottomLeft,
-        ],
-        // Direction::Bottom
-        vec![
-            Direction::Bottom,
-            Direction::BottomRight,
-            Direction::BottomLeft,
-        ],
-        // Direction::BottomLeft
-        vec![
-            Direction::BottomLeft,
-            Direction::Left,
-            Direction::Bottom,
-            Direction::TopLeft,
-            Direction::BottomRight,
-        ],
-        // Direction::Left
-        vec![Direction::Left, Direction::BottomLeft, Direction::TopLeft],
-        // Direction::TopLeft
-        vec![
-            Direction::TopLeft,
-            Direction::Top,
-            Direction::Left,
-            Direction::BottomLeft,
-            Direction::TopRight,
-        ],
-    ];
-}
-
-/// Returns the next directions to consider, based on the direction from which the tile
-/// was entered. Lateral directions can be ruled out as an optimization.
-fn next_directions(open_direction: Option<Direction>) -> &'static [Direction] {
-    &DIRECTION_LOOKUP[open_direction.map(|d| d as usize).unwrap_or(0)]
+#[derive(Copy, Clone)]
+struct State {
+    // The cost to reach the current position.
+    g_score: usize,
+    // The current position.
+    position: PositionIndex,
+    // The direction from the previous position that led to the current position.
+    open_direction: Option<Direction>,
+    // The index of the position's room in the room data cache.
+    room_key: usize,
 }
 
 /// Creates a distance map for the given start positions, using A* to optimize the search and
 /// find the shortest path to the given destinations.
 pub fn astar_multiroom_distance_map3(
     start: Vec<PositionIndex>,
-    get_cost_matrix: impl Fn(RoomName) -> Option<ClockworkCostMatrix>,
-    max_tiles: usize,
-    max_tile_distance: usize,
-    goals: Vec<PositionIndex>,
-) -> MultiroomNumericMap<usize> {
+    get_cost_matrix: impl Fn(RoomName) -> Option<CustomCostMatrix>,
+    max_rooms: usize,
+    max_ops: usize,
+    max_path_cost: usize,
+    heuristic_fn: impl Fn(PositionIndex) -> usize,
+    any_of_destinations: Option<Vec<PositionIndex>>,
+    all_of_destinations: Option<Vec<PositionIndex>>,
+) -> MultiroomDistanceMapIndexed {
     set_panic_hook();
-    let mut visited = 0;
-    let mut multiroom_distance_map = MultiroomNumericMap::new();
-    let cost_matrices = OptionalCache::new(|room: RoomName| get_cost_matrix(room));
-    let mut metrics = PathfindingMetrics::new();
-
-    let start_room = start[0].room();
-
-    // Initialize f-score buckets with VecDeque
-    let mut open_by_f_score: Vec<VecDeque<State>> = vec![VecDeque::new()];
-    let mut current_f_score = 0;
+    // Since we expect the total cost to be limited (path costs above 1500 rarely make sense),
+    // we use a vec indexed by the f_score to store the open states rather than a proper priority queue.
+    let mut open: Vec<Vec<State>> = vec![Default::default()];
+    let mut min_idx = 0;
+    // We use this to limit the search to the given number of tiles.
+    let mut tiles_remaining = max_ops;
+    let mut cached_room_data = IndexedRoomDataCache::new(max_rooms, get_cost_matrix);
+    let any_of_targets: HashSet<PositionIndex> = any_of_destinations
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let mut all_of_targets: HashSet<PositionIndex> = all_of_destinations
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
 
     // Initialize with start positions
     for position in start {
-        let h_score = heuristic(position, &goals);
-        while open_by_f_score.len() <= h_score {
-            open_by_f_score.push(VecDeque::new());
+        let room_key = cached_room_data.get_room_key(position.room());
+        if let Some(room_key) = room_key {
+            open[0].push(State {
+                g_score: 0,
+                position,
+                open_direction: None,
+                room_key,
+            });
+            cached_room_data[room_key].distance_map[position.local()] = 0;
+            tiles_remaining -= 1;
         }
-        open_by_f_score[h_score].push_back(State {
-            g_score: 0,
-            position,
-            open_direction: None,
-        });
-        multiroom_distance_map.set(position, 0);
-        visited += 1;
     }
 
-    let mut current_room = start_room;
-    let mut current_room_cost_matrix =
-        if let Some(cost_matrix) = cost_matrices.get_or_create(current_room.room_name()) {
-            cost_matrix
-        } else {
-            // log(&format!("A*: {:?}", metrics));
-            return multiroom_distance_map;
-        };
-    let mut current_room_distance_map = multiroom_distance_map.get_or_create_room_map(current_room);
-
-    while current_f_score < open_by_f_score.len() {
-        // Find next non-empty bucket
-        while current_f_score < open_by_f_score.len() && open_by_f_score[current_f_score].is_empty() {
-            current_f_score += 1;
-        }
-        if current_f_score >= open_by_f_score.len() {
-            break;
-        }
-
-        let State {
+    // Loop through all open tiles, starting with the lowest f_score.
+    while min_idx < open.len() {
+        while let Some(State {
             g_score,
             position,
             open_direction,
-        } = open_by_f_score[current_f_score].pop_front().unwrap();
+            room_key,
+        }) = open[min_idx].pop()
+        {
+            // Ignore paths that cost too much.
+            if g_score >= max_path_cost {
+                continue;
+            }
 
-        metrics.nodes_visited += 1;
+            let current_room_name = cached_room_data[room_key].room_index;
 
-        if g_score >= max_tile_distance {
-            continue;
-        }
+            // Loop through relevant neighbors (not all directions can improve the path)
+            for neighbor_direction in next_directions(open_direction) {
+                // If neighbor would be a room edge, map it to the corresponding tile in
+                // the other room, where the creep would be if it moved in that direction.
+                let neighbor = 
+                    match position.r#move(*neighbor_direction) {
+                        Some(pos) => pos,
+                        None => continue,
+                    }
+                ;
 
-        for direction in next_directions(open_direction) {
-            let Some(neighbor_pos) = position.r#move(*direction) else { continue; };
-            metrics.neighbor_checks += 1;
-
-            if neighbor_pos.room() != current_room {
-                let next_matrix = cost_matrices.get_or_create(neighbor_pos.room_name());
-
-                if let Some(cost_matrix) = next_matrix {
-                    current_room_cost_matrix = cost_matrix;
-                    current_room = neighbor_pos.room();
-                    current_room_distance_map =
-                        multiroom_distance_map.get_or_create_room_map(current_room);
+                // Get the room index for the neighbor, if it's different from the current position.
+                let room_key = if neighbor.room() == current_room_name {
+                    room_key
                 } else {
+                    match cached_room_data.get_room_key(neighbor.room()) {
+                        Some(key) => key,
+                        None => continue,
+                    }
+                };
+
+                // Look up the terrain cost for the neighboring position. If it's impassable,
+                // or the entire cost matrix is blocked, skip this neighbor.
+                let terrain_cost =
+                    if let Some(cost_matrix) = &cached_room_data[room_key].cost_matrix {
+                        let terrain_cost = cost_matrix.get_local(neighbor.local());
+                        if terrain_cost >= 255 {
+                            // impassable terrain
+                            continue;
+                        }
+                        terrain_cost
+                    } else {
+                        // no cost matrix means room is blocked
+                        continue;
+                    };
+
+                // Calculate the cost of the path to the neighbor (from moving through the current position)
+                let next_cost = g_score.saturating_add(terrain_cost as usize);
+
+                // Skip this neighbor if we've already found a better path to it.
+                if cached_room_data[room_key].distance_map[neighbor.local()] <= next_cost {
+                    // already visited and better path found
                     continue;
                 }
-            }
 
-            let terrain_cost = current_room_cost_matrix.get_local(neighbor_pos.local());
-            if terrain_cost >= 255 {
-                continue;
-            }
+                // Calculate the heuristic score for the neighbor.
+                // This is the estimated cost to the goal from the neighbor.
+                let h_score = heuristic_fn(neighbor);
+                // The f_score is the sum of the cost to reach the neighbor and the heuristic score.
+                let f_score = next_cost.saturating_add(h_score);
 
-            let next_cost = g_score.saturating_add(terrain_cost as usize);
+                // Ensure the open list has enough buckets to store the new state.
+                open.resize(
+                    open.len().max(f_score.saturating_add(1)),
+                    Default::default(),
+                );
 
-            if current_room_distance_map.get(neighbor_pos.local()) <= next_cost {
-                continue;
-            }
+                // Add the new state to the open list and update the distance map.
+                open[f_score].push(State {
+                    g_score: next_cost,
+                    position: neighbor,
+                    open_direction: Some(*neighbor_direction),
+                    room_key,
+                });
+                cached_room_data[room_key].distance_map[neighbor.local()] = next_cost;
+                tiles_remaining -= 1;
 
-            let h_score = heuristic(neighbor_pos, &goals);
-            let f_score = next_cost.saturating_add(h_score);
+                // if the f_score is lower than the current min_idx, update min_idx
+                min_idx = min_idx.min(f_score);
 
-            // Ensure we have a bucket for this f_score
-            while open_by_f_score.len() <= f_score {
-                open_by_f_score.push(VecDeque::new());
-            }
+                // check off targets as they are reached
+                if all_of_destinations.is_some() {
+                    all_of_targets.remove(&neighbor);
+                }
 
-            open_by_f_score[f_score].push_back(State {
-                g_score: next_cost,
-                position: neighbor_pos,
-                open_direction: Some(*direction),
-            });
-            current_room_distance_map.set(neighbor_pos.local(), next_cost);
-            visited += 1;
-
-            if goals.contains(&neighbor_pos) || visited >= max_tiles {
-                // log(&format!("A*: {:?}", metrics));
-                return multiroom_distance_map;
+                // If the goal is reached or the max number of tiles has been processed, return the distance map.
+                if (any_of_destinations.is_some() && any_of_targets.contains(&neighbor))
+                    || (all_of_destinations.is_some() && all_of_targets.is_empty())
+                    || tiles_remaining == 0
+                {
+                    return cached_room_data.into();
+                }
             }
         }
+        // Move to the next bucket in the open list.
+        min_idx += 1;
     }
 
-    // log(&format!("A*: {:?}", metrics));
-    multiroom_distance_map
+    // If we've processed all tiles and haven't found the goal, return the distance map.
+    cached_room_data.into()
 }
 
 #[wasm_bindgen]
 pub fn js_astar_multiroom_distance_map3(
     start_packed: Vec<u32>,
     get_cost_matrix: &js_sys::Function,
-    max_tiles: usize,
-    max_tile_distance: usize,
-    destinations: Vec<u32>,
-) -> JsMultiroomNumericMap {
+    max_rooms: usize,
+    max_ops: usize,
+    max_path_cost: usize,
+    // TODO: Destinations need to include a range
+    any_of_destinations: Option<Vec<u32>>,
+    all_of_destinations: Option<Vec<u32>>,
+) -> MultiroomDistanceMapIndexed {
     let start_positions = start_packed
         .iter()
-        .map(|pos| PositionIndex::from(Position::from_packed(*pos)))
+        .map(|pos| PositionIndex::from(*pos))
         .collect();
-    let result = astar_multiroom_distance_map3(
+
+    let any_of_destinations: Option<Vec<PositionIndex>> = any_of_destinations.and_then(|destinations| {
+        Some(
+            destinations
+                .iter()
+                .map(|pos| PositionIndex::from(*pos))
+                .collect(),
+        )
+    });
+
+    let all_of_destinations: Option<Vec<PositionIndex>> = all_of_destinations.and_then(|destinations| {
+        Some(
+            destinations
+                .iter()
+                .map(|pos| PositionIndex::from(*pos))
+                .collect(),
+        )
+    });
+
+    let all_destinations: Vec<PositionIndex> = all_of_destinations
+        .clone()
+        .unwrap_or_default()
+        .into_iter()
+        .chain(any_of_destinations.clone().unwrap_or_default())
+        .collect();
+
+    let heuristic_fn = |position: PositionIndex| {
+        heuristic(position, &all_destinations)
+    };
+
+    astar_multiroom_distance_map3(
         start_positions,
         |room| {
             let result = get_cost_matrix.call1(
@@ -249,79 +249,19 @@ pub fn js_astar_multiroom_distance_map3(
                 None
             } else {
                 Some(
-                    ClockworkCostMatrix::try_from(value)
+                    CustomCostMatrix::try_from(value)
                         .ok()
-                        .expect_throw("Invalid ClockworkCostMatrix"),
+                        .expect_throw("Invalid CustomCostMatrix"),
                 )
             };
 
             cost_matrix
         },
-        max_tiles,
-        max_tile_distance,
-        destinations
-            .iter()
-            .map(|pos| PositionIndex::from(Position::from_packed(*pos)))
-            .collect(),
-    );
-    JsMultiroomNumericMap { internal: result }
-}
-
-
-
-#[wasm_bindgen]
-pub fn js_astar_multiroom_path3(
-    start_packed: Vec<u32>,
-    get_cost_matrix: &js_sys::Function,
-    max_tiles: usize,
-    max_tile_distance: usize,
-    destinations: Vec<u32>,
-) -> Path {
-    let start_positions = start_packed
-        .iter()
-        .map(|pos| PositionIndex::from(Position::from_packed(*pos)))
-        .collect();
-    let result = astar_multiroom_distance_map3(
-        start_positions,
-        |room| {
-            let result = get_cost_matrix.call1(
-                &JsValue::null(),
-                &JsValue::from_f64(room.packed_repr() as f64),
-            );
-
-            let value = match result {
-                Ok(value) => value,
-                Err(e) => throw_val(e),
-            };
-
-            let cost_matrix = if value.is_undefined() {
-                None
-            } else {
-                Some(
-                    ClockworkCostMatrix::try_from(value)
-                        .ok()
-                        .expect_throw("Invalid ClockworkCostMatrix"),
-                )
-            };
-
-            cost_matrix
-        },
-        max_tiles,
-        max_tile_distance,
-        destinations
-            .iter()
-            .map(|pos| PositionIndex::from(Position::from_packed(*pos)))
-            .collect(),
-    );
-    if let Ok(path) = path_to_multiroom_distance_map_origin(Position::from_packed(destinations[0]), &result) {
-        path
-    } else {
-        Path::new()
-    }
-
-    // if let Ok(path) = path_to_multiroom_distance_map_origin(Position::from_packed(start_packed[0]), &result) {
-    //     path.into_iter().map(|pos| pos.packed_repr()).collect()
-    // } else {
-    //     vec![]
-    // }
+        max_rooms,
+        max_ops,
+        max_path_cost,
+        heuristic_fn,
+        any_of_destinations,
+        all_of_destinations,
+    )
 }

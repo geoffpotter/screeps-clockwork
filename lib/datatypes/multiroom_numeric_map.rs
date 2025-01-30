@@ -17,9 +17,9 @@ pub struct MultiroomNumericMap<T>
 where
     T: Copy + Bounded + Add<Output = T> + Sub<Output = T> + PartialEq
 {
-    maps: HashMap<RoomIndex, NumericMap<T>>,
-    current_room: Option<RoomIndex>,
-    current_room_map: Option<*mut NumericMap<T>>,
+    pub maps: HashMap<RoomIndex, NumericMap<T>>,
+    pub current_room: Option<RoomIndex>,
+    pub current_room_map: Option<*mut NumericMap<T>>,
 }
 
 impl<T> MultiroomNumericMap<T>

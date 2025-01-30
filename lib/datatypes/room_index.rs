@@ -279,6 +279,24 @@ impl<T> IndexMut<RoomIndex> for Vec<T> {
     }
 }
 
+impl From<u16> for RoomIndex {
+    fn from(index: u16) -> Self {
+        Self::from_index(index)
+    }
+}
+
+impl From<RoomName> for RoomIndex {
+    fn from(name: RoomName) -> Self {
+        Self::from_room_name(&name.to_string()).unwrap()
+    }
+}
+
+impl From<RoomIndex> for RoomName {
+    fn from(index: RoomIndex) -> Self {
+        RoomName::from_str(&index.to_room_name()).unwrap()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

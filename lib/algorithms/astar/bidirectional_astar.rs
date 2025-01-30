@@ -1,28 +1,34 @@
-use crate::datatypes::{CustomCostMatrix, Path, PositionIndex};
-use screeps::{Direction, Position, RoomName, RoomXY};
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use crate::datatypes::{ClockworkCostMatrix, CustomCostMatrix, Path, PositionIndex, IndexedRoomDataCache, RoomIndex, MultiroomDistanceMap};
+use crate::algorithms::map::{corresponding_room_edge, next_directions};
+use screeps::{CircleStyle, Direction, LineStyle, Position, RoomName, RoomVisual, RoomXY};
+use crate::log;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+const DEBUG_LOGGING: bool = false;
+const DEBUG_VISUALIZE: bool = false;
+
+const ALL_DIRECTIONS: [Direction; 8] = [
+    Direction::Top,
+    Direction::TopRight,
+    Direction::Right,
+    Direction::BottomRight,
+    Direction::Bottom,
+    Direction::BottomLeft,
+    Direction::Left,
+    Direction::TopLeft,
+];
+
+#[derive(Copy, Clone)]
 struct State {
-    f_score: u32,
+    // The cost to reach the current position
     g_score: u32,
+    // The current position
     position: PositionIndex,
-}
-
-impl Ord for State {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.f_score.cmp(&self.f_score)
-    }
-}
-
-impl PartialOrd for State {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    // The index of the position's room in the room data cache
+    room_key: usize,
 }
 
 #[wasm_bindgen]
@@ -44,6 +50,7 @@ pub fn js_bidirectional_astar_path(
         goal_idx,
         move |room_name: RoomName| {
             let js_room_name = JsValue::from_str(&room_name.to_string());
+            
             let result = get_cost_matrix.call1(
                 &JsValue::NULL,
                 &js_room_name,
@@ -75,199 +82,399 @@ fn bidirectional_astar_path(
     max_ops: usize,
     max_rooms: usize,
 ) -> Option<Vec<PositionIndex>> {
-    let mut cost_matrices: HashMap<RoomName, CustomCostMatrix> = HashMap::new();
-    let mut forward_open = BinaryHeap::new();
-    let mut backward_open = BinaryHeap::new();
+    if DEBUG_LOGGING {
+        log(&format!("Starting bidirectional A* from {:?} to {:?}", start, goal));
+    }
+
+    let mut cached_room_data = IndexedRoomDataCache::new(max_rooms, get_cost_matrix);
+    
+    // Vec-based open lists for forward and backward search
+    let mut forward_open: Vec<Vec<State>> = vec![Default::default()];
+    let mut backward_open: Vec<Vec<State>> = vec![Default::default()];
+    let mut forward_min_idx = 0;
+    let mut backward_min_idx = 0;
+    
     let mut forward_closed = HashSet::new();
     let mut backward_closed = HashSet::new();
     let mut forward_came_from = HashMap::new();
     let mut backward_came_from = HashMap::new();
-    let mut forward_g_scores = HashMap::new();
-    let mut backward_g_scores = HashMap::new();
+    let mut forward_distance_map = MultiroomDistanceMap::new();
+    let mut backward_distance_map = MultiroomDistanceMap::new();
     let mut ops = 0;
 
-    forward_open.push(State {
-        g_score: 0,
-        f_score: start.distance_to(&goal) as u32,
-        position: start,
-    });
+    // Track best meeting point
+    let mut best_meeting_point = None;
+    let mut best_total_cost = u32::MAX;
 
-    backward_open.push(State {
-        g_score: 0,
-        f_score: goal.distance_to(&start) as u32,
-        position: goal,
-    });
+    // Add a constant for the early exit threshold
+    const EARLY_EXIT_MULTIPLIER: f32 = 1.0;
 
-    forward_g_scores.insert(start, 0);
-    backward_g_scores.insert(goal, 0);
+    // Initialize forward search
+    if let Some(start_room_key) = cached_room_data.get_room_key(start.room()) {
+        let h_score = start.distance_to(&goal) as u32;
+        forward_open[0].push(State {
+            g_score: 0,
+            position: start,
+            room_key: start_room_key,
+        });
+        forward_distance_map.set(start.into(), 0);
+    }
+
+    // Initialize backward search
+    if let Some(goal_room_key) = cached_room_data.get_room_key(goal.room()) {
+        let h_score = goal.distance_to(&start) as u32;
+        backward_open[0].push(State {
+            g_score: 0,
+            position: goal,
+            room_key: goal_room_key,
+        });
+        backward_distance_map.set(goal.into(), 0);
+    }
 
     while !forward_open.is_empty() && !backward_open.is_empty() && ops < max_ops {
         ops += 1;
 
         // Forward search step
-        if let Some(current) = forward_open.pop() {
-            let pos = current.position;
+        while forward_min_idx < forward_open.len() && forward_open[forward_min_idx].is_empty() {
+            forward_min_idx += 1;
+        }
+        
+        // Backward search step
+        while backward_min_idx < backward_open.len() && backward_open[backward_min_idx].is_empty() {
+            backward_min_idx += 1;
+        }
 
-            if backward_closed.contains(&pos) {
-                return Some(reconstruct_path(
-                    pos,
-                    &forward_came_from,
-                    &backward_came_from,
-                ));
+        // Check if either search is exhausted
+        if forward_min_idx >= forward_open.len() || backward_min_idx >= backward_open.len() {
+            if DEBUG_LOGGING {
+                log(&format!("Search exhausted - forward_min_idx: {}, backward_min_idx: {}", 
+                    forward_min_idx, backward_min_idx));
             }
+            break;
+        }
 
-            if forward_closed.contains(&pos) {
-                continue;
-            }
-
-            forward_closed.insert(pos);
-
-            let room = pos.room_name();
-            let cost_matrix = match cost_matrices.entry(room) {
-                std::collections::hash_map::Entry::Occupied(entry) => entry.get().clone(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    if let Some(matrix) = get_cost_matrix(room) {
-                        entry.insert(matrix.clone());
-                        matrix
-                    } else {
-                        continue;
-                    }
-                }
-            };
-
-            let mut current_cost_matrix = &cost_matrix;
+        // Early exit check - if we have a meeting point and both current minimum f-scores exceed it
+        if let Some(meeting_point) = best_meeting_point {
+            let min_forward_f = forward_min_idx as u32;
+            let min_backward_f = backward_min_idx as u32;
             
-            // Get all valid neighbors
-            let directions = [
-                Direction::Top,
-                Direction::TopRight,
-                Direction::Right,
-                Direction::BottomRight,
-                Direction::Bottom,
-                Direction::BottomLeft,
-                Direction::Left,
-                Direction::TopLeft,
-            ];
-            
-            for dir in directions.iter() {
-                if let Some(next_pos) = pos.r#move(*dir) {
-                    let next_room = next_pos.room_name();
-                    if next_room != room {
-                        if cost_matrices.len() >= max_rooms {
-                            continue;
-                        }
-                        if !cost_matrices.contains_key(&next_room) {
-                            if let Some(cost_matrix) = get_cost_matrix(next_room) {
-                                cost_matrices.insert(next_room, cost_matrix);
-                            } else {
-                                continue;
-                            }
-                        }
-                        current_cost_matrix = cost_matrices.get(&next_room).unwrap();
-                    }
-
-                    let cost = current_cost_matrix.get(RoomXY::new(next_pos.x(), next_pos.y()));
-                    if cost == 255 {
-                        continue;
-                    }
-
-                    let tentative_g_score = current.g_score + cost as u32;
-                    if tentative_g_score < *forward_g_scores.get(&next_pos).unwrap_or(&u32::MAX) {
-                        forward_came_from.insert(next_pos, pos);
-                        forward_g_scores.insert(next_pos, tentative_g_score);
-                        forward_open.push(State {
-                            g_score: tentative_g_score,
-                            f_score: tentative_g_score + next_pos.distance_to(&goal) as u32,
-                            position: next_pos,
-                        });
-                    }
+            // If both minimum f-scores are greater than our best path, we can exit
+            if min_forward_f >= best_total_cost && min_backward_f >= best_total_cost {
+                if DEBUG_LOGGING {
+                    log(&format!("Early exit - best cost: {}, min forward f: {}, min backward f: {}", 
+                        best_total_cost, min_forward_f, min_backward_f));
                 }
+                break;
             }
         }
 
-        // Backward search step
-        if let Some(current) = backward_open.pop() {
-            let pos = current.position;
+        // Alternate between forward and backward search
+        if ops % 2 == 0 {
+            if let Some(current) = forward_open[forward_min_idx].pop() {
+                let pos = current.position;
+                if DEBUG_VISUALIZE {
+                    let viz = RoomVisual::new(Some(pos.room_name()));
+                    viz.circle(
+                        pos.x().u8() as f32,
+                        pos.y().u8() as f32,
+                        Some(CircleStyle::default().fill("red").opacity(0.5).radius(0.3)),
+                    );
+                }
+                if DEBUG_LOGGING {
+                    log(&format!("Processing forward position {:?} with g_score {}", pos, current.g_score));
+                }
 
-            if forward_closed.contains(&pos) {
-                return Some(reconstruct_path(
-                    pos,
-                    &forward_came_from,
-                    &backward_came_from,
-                ));
-            }
+                if forward_closed.contains(&pos) {
+                    if DEBUG_LOGGING {
+                        log(&format!("Position {:?} already in forward closed set", pos));
+                    }
+                    continue;
+                }
 
-            if backward_closed.contains(&pos) {
-                continue;
-            }
+                // Early exit if this path is already worse than our best
+                let f_score = current.g_score + pos.distance_to(&goal) as u32;
+                if best_meeting_point.is_some() && f_score >= best_total_cost {
+                    continue;
+                }
 
-            backward_closed.insert(pos);
-
-            let room = pos.room_name();
-            let cost_matrix = match cost_matrices.entry(room) {
-                std::collections::hash_map::Entry::Occupied(entry) => entry.get().clone(),
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    if let Some(matrix) = get_cost_matrix(room) {
-                        entry.insert(matrix.clone());
-                        matrix
-                    } else {
-                        continue;
+                // Check if this is a better meeting point
+                let backward_cost = backward_distance_map.get(pos.into());
+                if backward_cost != usize::MAX {
+                    let total_cost = current.g_score + backward_cost as u32;
+                    if total_cost < best_total_cost {
+                        best_meeting_point = Some(pos);
+                        best_total_cost = total_cost;
+                        
+                        // Since we found a better path, we can skip any positions with higher f-scores
+                        forward_open.truncate((total_cost + 1) as usize);
+                        backward_open.truncate((total_cost + 1) as usize);
                     }
                 }
-            };
 
-            let mut current_cost_matrix = &cost_matrix;
-            
-            // Get all valid neighbors
-            let directions = [
-                Direction::Top,
-                Direction::TopRight,
-                Direction::Right,
-                Direction::BottomRight,
-                Direction::Bottom,
-                Direction::BottomLeft,
-                Direction::Left,
-                Direction::TopLeft,
-            ];
-            
-            for dir in directions.iter() {
-                if let Some(next_pos) = pos.r#move(*dir) {
-                    let next_room = next_pos.room_name();
-                    if next_room != room {
-                        if cost_matrices.len() >= max_rooms {
+                forward_closed.insert(pos);
+                let current_room_name = cached_room_data[current.room_key].room_index;
+
+                // Process all possible neighbors
+                for direction in ALL_DIRECTIONS.iter() {
+                    if let Some(next_pos) = pos.r#move(*direction) {
+                        if forward_closed.contains(&next_pos) {
                             continue;
                         }
-                        if !cost_matrices.contains_key(&next_room) {
-                            if let Some(cost_matrix) = get_cost_matrix(next_room) {
-                                cost_matrices.insert(next_room, cost_matrix);
-                            } else {
-                                continue;
+
+                        // Skip positions that are too far from the optimal path
+                        let manhattan_to_goal = next_pos.distance_to(&goal);
+                        if manhattan_to_goal as u32 + current.g_score > (best_total_cost as f32 * EARLY_EXIT_MULTIPLIER) as u32 {
+                            if DEBUG_LOGGING {
+                                log(&format!("Skipping forward position {:?} - too far from goal", next_pos));
                             }
+                            continue;
                         }
-                        current_cost_matrix = cost_matrices.get(&next_room).unwrap();
-                    }
 
-                    let cost = current_cost_matrix.get(RoomXY::new(next_pos.x(), next_pos.y()));
-                    if cost == 255 {
-                        continue;
-                    }
+                        if DEBUG_VISUALIZE {
+                            let viz = RoomVisual::new(Some(next_pos.room_name()));
+                            viz.circle(
+                                next_pos.x().u8() as f32,
+                                next_pos.y().u8() as f32,
+                                Some(CircleStyle::default().fill("red").opacity(0.2).radius(0.15)),
+                            );
+                            viz.line(
+                                (pos.local().x() as f32, pos.local().y() as f32),
+                                (next_pos.local().x() as f32, next_pos.local().y() as f32),
+                                Some(LineStyle::default().color("red").opacity(0.2).width(0.1)),
+                            );
+                        }
 
-                    let tentative_g_score = current.g_score + cost as u32;
-                    if tentative_g_score < *backward_g_scores.get(&next_pos).unwrap_or(&u32::MAX) {
-                        backward_came_from.insert(next_pos, pos);
-                        backward_g_scores.insert(next_pos, tentative_g_score);
-                        backward_open.push(State {
-                            g_score: tentative_g_score,
-                            f_score: tentative_g_score + next_pos.distance_to(&start) as u32,
+                        let next_room_name = next_pos.room();
+                        let room_key = if next_room_name == current_room_name {
+                            current.room_key
+                        } else {
+                            match cached_room_data.get_room_key(next_room_name) {
+                                Some(key) => key,
+                                None => continue,
+                            }
+                        };
+
+                        let cost = match &cached_room_data[room_key].cost_matrix {
+                            Some(matrix) => {
+                                let cost = matrix.get(RoomXY::new(next_pos.x(), next_pos.y()));
+                                if cost == 255 {
+                                    if DEBUG_LOGGING {
+                                        log(&format!("Position {:?} is blocked (cost 255)", next_pos));
+                                    }
+                                    continue;
+                                }
+                                cost
+                            }
+                            None => continue,
+                        };
+
+                        let next_g_score = current.g_score + cost as u32;
+                        let current_best = forward_distance_map.get(next_pos.into());
+                        
+                        if next_g_score >= current_best as u32 {
+                            continue;
+                        }
+
+                        let h_score = next_pos.distance_to(&goal) as u32;
+                        let f_score = next_g_score + h_score;
+
+                        if DEBUG_LOGGING {
+                            log(&format!("Position {:?} - g: {}, h: {}, f: {}", 
+                                next_pos, next_g_score, h_score, f_score));
+                        }
+
+                        forward_open.resize(forward_open.len().max(f_score as usize + 1), Default::default());
+                        forward_distance_map.set(next_pos.into(), next_g_score as usize);
+                        forward_came_from.insert(next_pos, pos);
+                        forward_open[f_score as usize].push(State {
+                            g_score: next_g_score,
                             position: next_pos,
+                            room_key,
                         });
+
+                        forward_min_idx = forward_min_idx.min(f_score as usize);
+                    }
+                }
+            }
+        } else {
+            // Backward search step
+            if let Some(current) = backward_open[backward_min_idx].pop() {
+                let pos = current.position;
+                if DEBUG_VISUALIZE {
+                    let viz = RoomVisual::new(Some(pos.room_name()));
+                    viz.circle(
+                        pos.x().u8() as f32,
+                        pos.y().u8() as f32,
+                        Some(CircleStyle::default().fill("blue").opacity(0.5).radius(0.3)),
+                    );
+                }
+                if DEBUG_LOGGING {
+                    log(&format!("Processing backward position {:?} with g_score {}", pos, current.g_score));
+                }
+
+                if backward_closed.contains(&pos) {
+                    if DEBUG_LOGGING {
+                        log(&format!("Position {:?} already in backward closed set", pos));
+                    }
+                    continue;
+                }
+
+                // Early exit if this path is already worse than our best
+                let f_score = current.g_score + pos.distance_to(&start) as u32;
+                if best_meeting_point.is_some() && f_score >= best_total_cost {
+                    continue;
+                }
+
+                // Check if this is a better meeting point
+                let forward_cost = forward_distance_map.get(pos.into());
+                if forward_cost != usize::MAX {
+                    let total_cost = current.g_score + forward_cost as u32;
+                    if total_cost < best_total_cost {
+                        best_meeting_point = Some(pos);
+                        best_total_cost = total_cost;
+                        
+                        // Since we found a better path, we can skip any positions with higher f-scores
+                        forward_open.truncate((total_cost + 1) as usize);
+                        backward_open.truncate((total_cost + 1) as usize);
+                    }
+                }
+
+                backward_closed.insert(pos);
+                let current_room_name = cached_room_data[current.room_key].room_index;
+
+                // Process all possible neighbors
+                for direction in ALL_DIRECTIONS.iter() {
+                    if let Some(next_pos) = pos.r#move(*direction) {
+                        if backward_closed.contains(&next_pos) {
+                            continue;
+                        }
+
+                        // Skip positions that are too far from the optimal path
+                        let manhattan_to_start = next_pos.distance_to(&start);
+                        if manhattan_to_start as u32 + current.g_score > (best_total_cost as f32 * EARLY_EXIT_MULTIPLIER) as u32 {
+                            if DEBUG_LOGGING {
+                                log(&format!("Skipping backward position {:?} - too far from start", next_pos));
+                            }
+                            continue;
+                        }
+
+                        if DEBUG_VISUALIZE {
+                            let viz = RoomVisual::new(Some(next_pos.room_name()));
+                            viz.circle(
+                                next_pos.x().u8() as f32,
+                                next_pos.y().u8() as f32,
+                                Some(CircleStyle::default().fill("blue").opacity(0.2).radius(0.15)),
+                            );
+                            viz.line(
+                                (pos.local().x() as f32, pos.local().y() as f32),
+                                (next_pos.local().x() as f32, next_pos.local().y() as f32),
+                                Some(LineStyle::default().color("blue").opacity(0.2).width(0.1)),
+                            );
+                        }
+
+                        let next_room_name = next_pos.room();
+                        let room_key = if next_room_name == current_room_name {
+                            current.room_key
+                        } else {
+                            match cached_room_data.get_room_key(next_room_name) {
+                                Some(key) => key,
+                                None => continue,
+                            }
+                        };
+
+                        let cost = match &cached_room_data[room_key].cost_matrix {
+                            Some(matrix) => {
+                                let cost = matrix.get(RoomXY::new(next_pos.x(), next_pos.y()));
+                                if cost == 255 {
+                                    if DEBUG_LOGGING {
+                                        log(&format!("Position {:?} is blocked (cost 255)", next_pos));
+                                    }
+                                    continue;
+                                }
+                                cost
+                            }
+                            None => continue,
+                        };
+
+                        let next_g_score = current.g_score + cost as u32;
+                        let current_best = backward_distance_map.get(next_pos.into());
+                        
+                        if next_g_score >= current_best as u32 {
+                            continue;
+                        }
+
+                        let h_score = next_pos.distance_to(&start) as u32;
+                        let f_score = next_g_score + h_score;
+
+                        if DEBUG_LOGGING {
+                            log(&format!("Position {:?} - g: {}, h: {}, f: {}", 
+                                next_pos, next_g_score, h_score, f_score));
+                        }
+
+                        backward_open.resize(backward_open.len().max(f_score as usize + 1), Default::default());
+                        backward_distance_map.set(next_pos.into(), next_g_score as usize);
+                        backward_came_from.insert(next_pos, pos);
+                        backward_open[f_score as usize].push(State {
+                            g_score: next_g_score,
+                            position: next_pos,
+                            room_key,
+                        });
+
+                        backward_min_idx = backward_min_idx.min(f_score as usize);
                     }
                 }
             }
         }
     }
 
-    None
+    if DEBUG_LOGGING {
+        if let Some(meeting_point) = best_meeting_point {
+            log(&format!("Found optimal meeting point at {:?} with total cost {}", meeting_point, best_total_cost));
+        } else {
+            log(&format!("Path not found after {} operations", ops));
+        }
+    }
+
+    // // After finding the path, visualize it if we found one
+    // if DEBUG_VISUALIZE {
+    //     if let Some(meeting_point) = best_meeting_point {
+    //         // Visualize the forward path
+    //         let mut current = meeting_point;
+    //         while let Some(&prev) = forward_came_from.get(&current) {
+    //             let viz = RoomVisual::new(Some(current.room_name()));
+    //             viz.line(
+    //                 (current.local().x() as f32, current.local().y() as f32),
+    //                 (prev.local().x() as f32, prev.local().y() as f32),
+    //                 Some(LineStyle::default().color("yellow").opacity(0.8).width(0.15)),
+    //             );
+    //             if prev == current {
+    //                 break;
+    //             }
+    //             current = prev;
+    //         }
+
+    //         // Visualize the backward path
+    //         let mut current = meeting_point;
+    //         while let Some(&next) = backward_came_from.get(&current) {
+    //             let viz = RoomVisual::new(Some(current.room_name()));
+    //             viz.line(
+    //                 (current.local().x() as f32, current.local().y() as f32),
+    //                 (next.local().x() as f32, next.local().y() as f32),
+    //                 Some(LineStyle::default().color("yellow").opacity(0.8).width(0.15)),
+    //             );
+    //             if next == current {
+    //                 break;
+    //             }
+    //             current = next;
+    //         }
+    //     }
+    // }
+
+    best_meeting_point.map(|meeting_point| reconstruct_path(
+        meeting_point,
+        &forward_came_from,
+        &backward_came_from,
+    ))
 }
 
 fn reconstruct_path(
@@ -275,30 +482,51 @@ fn reconstruct_path(
     forward_came_from: &HashMap<PositionIndex, PositionIndex>,
     backward_came_from: &HashMap<PositionIndex, PositionIndex>,
 ) -> Vec<PositionIndex> {
+    if DEBUG_LOGGING {
+        log(&format!("Reconstructing path from meeting point {:?}", meeting_point));
+    }
     let mut path = Vec::new();
+    let mut visited = HashSet::new();
 
     // Reconstruct forward path
     let mut current = meeting_point;
+    visited.insert(current);
     while let Some(&prev) = forward_came_from.get(&current) {
+        if DEBUG_LOGGING {
+            log(&format!("Forward path node: {:?}", current));
+        }
         path.push(current);
-        if prev == current {
+        if prev == current || visited.contains(&prev) {
+            if DEBUG_LOGGING {
+                log(&format!("Cycle detected in forward path at {:?}", current));
+            }
             break;
         }
+        visited.insert(prev);
         current = prev;
     }
+    path.push(current);
     path.reverse();
 
     // Reconstruct backward path
     let mut current = meeting_point;
     while let Some(&next) = backward_came_from.get(&current) {
-        if current != meeting_point {
-            path.push(current);
+        if DEBUG_LOGGING {
+            log(&format!("Backward path node: {:?}", current));
         }
-        if next == current {
+        if next == current || visited.contains(&next) {
+            if DEBUG_LOGGING {
+                log(&format!("Cycle detected in backward path at {:?}", current));
+            }
             break;
         }
+        visited.insert(next);
         current = next;
+        path.push(current);
     }
 
+    if DEBUG_LOGGING {
+        log(&format!("Final path length: {}", path.len()));
+    }
     path
 }
