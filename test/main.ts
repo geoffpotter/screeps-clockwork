@@ -2,7 +2,8 @@ import { initialize } from '../src/index';
 
 import { runTestScenarios } from './basicBot';
 import { run } from './tests';
-import { runBenchmarks } from './tests/bench/all_benchmarks';
+import { runBenchmarks } from './tests/bench/benchmark_framework';
+import './tests/bench/example_benchmark';
 import { visualize } from './visualizations';
 
 export const loop = () => {
@@ -12,5 +13,5 @@ export const loop = () => {
   initialize(true);
   run();
   visualize();
-  runBenchmarks();
+  runBenchmarks(undefined, 10);
 };

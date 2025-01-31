@@ -1,3 +1,6 @@
+import { cpuTime } from '../../utils/cpuTime';
+import './example_benchmark';
+
 export interface BenchmarkImplementation<ResultT, ArgsT> {
     name: string;
     fn: (args: ArgsT) => ResultT;
@@ -35,29 +38,53 @@ export interface BenchmarkResult<ResultT> {
     avgCpuTime: number;
     totalCpuTime: number;
     failures: string[];
+    contestWins: number;
+    beatReference: number;
+    totalContests: number;
 }
 
 export class Benchmark<ResultT, ArgsT> {
     public suite: BenchmarkSuite<ResultT, ArgsT>;
     private results: Map<string, Map<string, BenchmarkResult<ResultT>>>;
-    private currentImpl: string;
+    private currentArg: number;
     private currentCase: number;
-    private referenceResults: ResultT[] | null = null;
     private args: ArgsT[];
     private state: 'running' | 'complete';
     private tickCpuLimit: number;
-    private iterationsCompleted = 0;
-    private currentResults: ResultT[] = [];
-    private totalCpuUsed = 0;
+    private iterations: number;
 
-    constructor(suite: BenchmarkSuite<ResultT, ArgsT>, tickCpuLimit: number = Game.cpu.limit * 0.8) {
+    constructor(suite: BenchmarkSuite<ResultT, ArgsT>, tickCpuLimit: number = Game.cpu.limit * 0.8, iterations: number = 3) {
         this.suite = suite;
         this.results = new Map();
-        this.currentImpl = '';
+        this.currentArg = 0;
         this.currentCase = 0;
         this.state = 'running';
         this.tickCpuLimit = tickCpuLimit;
+        this.iterations = iterations;
         this.args = this.getCurrentCase().setup_args();
+        
+        // Initialize results for all implementations
+        this.initializeResults();
+    }
+
+    private initializeResults() {
+        const caseName = this.getCurrentCase().benchmarkName;
+        if (!this.results.has(caseName)) {
+            const caseResults = new Map<string, BenchmarkResult<ResultT>>();
+            this.suite.implementations.forEach(impl => {
+                caseResults.set(impl.name, {
+                    implementationName: impl.name,
+                    results: [],
+                    avgCpuTime: 0,
+                    totalCpuTime: 0,
+                    failures: [],
+                    contestWins: 0,
+                    beatReference: 0,
+                    totalContests: 0
+                });
+            });
+            this.results.set(caseName, caseResults);
+        }
     }
 
     private getCurrentCase(): BenchmarkCase<ResultT, ArgsT> {
@@ -65,112 +92,101 @@ export class Benchmark<ResultT, ArgsT> {
     }
 
     public run(): boolean {
-        // Return true when complete
         if (this.state === 'complete') return true;
 
-        // const startCpu = Game.cpu.getUsed();
-
         while (Game.cpu.getUsed() < this.tickCpuLimit) {
-            // console.log("running implementation", this.currentImpl);
-            if (this.runImplementation()) {
+            if (this.runContest()) {
                 return true;
             }
         }
 
-
-        const impl = this.suite.implementations.find(i => i.name === this.currentImpl);
-        if (impl) {
-            console.log(`Done with tick - Case: ${this.getCurrentCase().benchmarkName}, Implementation: ${impl.name} ${this.currentImpl} ${this.iterationsCompleted} iterations of ${this.args.length}`);
-        }
-
+        console.log(`Done with tick - Case: ${this.getCurrentCase().benchmarkName}, Arg: ${this.currentArg + 1}/${this.args.length}`);
         return false;
     }
 
-    protected runImplementation(): boolean {
-        // Handle implementation switching
-        if (!this.currentImpl) {
-            const nextImpl = this.suite.implementations
-                .map(impl => impl.name)
-                .find(implName => !this.getCaseResults().has(implName));
+    protected runContest(): boolean {
+        if (this.currentArg >= this.args.length) {
+            if (this.currentCase >= this.suite.cases.length - 1) {
+                this.complete();
+                return true;
+            } else {
+                this.currentCase++;
+                this.args = this.getCurrentCase().setup_args();
+                this.currentArg = 0;
+                this.initializeResults();
+                console.log("switching to next case", this.getCurrentCase().benchmarkName);
+            }
+        }
 
-            if (!nextImpl) {
-                // Move to next case or complete
-                if (this.currentCase >= this.suite.cases.length - 1) {
-                    this.complete();
-                    return true;
-                } else {
-                    this.currentCase++;
-                    this.args = this.getCurrentCase().setup_args();
-                    this.referenceResults = null;
-                    console.log("switching to next case", this.getCurrentCase().benchmarkName);
+        const currentArgs = this.args[this.currentArg];
+        const caseResults = this.getCaseResults();
+        let bestTime = Infinity;
+        let bestImpl = '';
+        let referenceTime = 0;
+        let referenceResult: ResultT | null = null;
+
+        // Run all implementations for current arg
+        for (const impl of this.suite.implementations) {
+            const result = caseResults.get(impl.name)!;
+            
+            // Run implementation with iterations
+            const [implResult, cpuUsed] = this.runImplementation(impl, currentArgs);
+            
+            // Store results
+            result.results.push(implResult);
+            result.totalCpuTime += cpuUsed;
+            result.avgCpuTime = result.totalCpuTime / (this.currentArg + 1);
+            result.totalContests++;
+
+            // Track best performance
+            if (cpuUsed < bestTime) {
+                bestTime = cpuUsed;
+                bestImpl = impl.name;
+            }
+
+            // Store reference result from first implementation
+            if (impl === this.suite.implementations[0]) {
+                referenceTime = cpuUsed;
+                referenceResult = implResult;
+            } else if (referenceResult && this.suite.validate) {
+                const validationResult = this.suite.validate(implResult, referenceResult, currentArgs);
+                if (validationResult !== true) {
+                    result.failures.push(`Failed at arg ${this.currentArg} with args ${JSON.stringify(currentArgs)}: ${validationResult}`);
                 }
             }
-            console.log("between implementations", nextImpl);
-            this.betweenImplementations();
-            this.currentImpl = nextImpl || 'wtf';
-            this.iterationsCompleted = 0;
-            this.currentResults = [];
-            this.totalCpuUsed = 0;
-        }
 
-        const impl = this.suite.implementations.find(i => i.name === this.currentImpl);
-        if (!impl) return true;
-        
-        const args = this.args[this.iterationsCompleted];
-        // Run single iteration and measure CPU
-        const startCpu = Game.cpu.getUsed();
-        let result: ResultT;
-        try {
-            result = impl.fn(args);
-        } catch (e) {
-            console.log("error in implementation", impl.name, e, JSON.stringify(e), Object.keys(e));
-            result = [] as any;
-        }
-        
-        this.totalCpuUsed += Game.cpu.getUsed() - startCpu;
-        this.currentResults.push(result);
-        this.iterationsCompleted++;
-
-        // Check if we've completed all iterations for this implementation
-        if (this.iterationsCompleted >= this.args.length) {
-            // Store all results and average CPU time
-            const result: BenchmarkResult<ResultT> = {
-                implementationName: impl.name,
-                results: this.currentResults,
-                avgCpuTime: this.totalCpuUsed / this.args.length,
-                totalCpuTime: this.totalCpuUsed,
-                failures: []
-            };
-
-            // If this is the first implementation, store reference results
-            if (!this.referenceResults) {
-                this.referenceResults = this.currentResults;
+            // Check if beat reference
+            if (impl !== this.suite.implementations[0] && cpuUsed < referenceTime) {
+                result.beatReference++;
             }
-
-            // Validate results if needed
-            if (this.suite.validate && this.referenceResults) {
-                this.currentResults.forEach((res, idx) => {
-                    const validationResult = this.suite.validate!(res, this.referenceResults![idx], this.args[idx]);
-                    if (validationResult !== true) {
-                        result.failures.push(`Failed at index ${idx} with args ${JSON.stringify(this.args[idx])}: ${validationResult}`);
-                    }
-                });
-            }
-
-            this.getCaseResults().set(this.currentImpl, result);
-            this.getCurrentCase().teardown?.();
-            this.currentImpl = '';
         }
 
+        // Record contest winner
+        if (bestImpl) {
+            const winnerResult = caseResults.get(bestImpl)!;
+            winnerResult.contestWins++;
+        }
+
+        this.currentArg++;
         return false;
+    }
+
+    private runImplementation(impl: BenchmarkImplementation<ResultT, ArgsT>, args: ArgsT): [ResultT, number] {
+        let result: ResultT;
+        const cpuUsed = cpuTime(() => {
+            try {
+                result = impl.fn(args);
+            } catch (e) {
+                console.log("error in implementation", impl.name, e);
+                result = [] as any;
+            }
+        }, this.iterations) / this.iterations;
+        
+        return [result!, cpuUsed];
     }
 
     private getCaseResults(): Map<string, BenchmarkResult<ResultT>> {
-        const caseName = this.getCurrentCase().benchmarkName;
-        if (!this.results.has(caseName)) {
-            this.results.set(caseName, new Map());
-        }
-        return this.results.get(caseName)!;
+        return this.results.get(this.getCurrentCase().benchmarkName)!;
     }
 
     private complete() {
@@ -185,18 +201,25 @@ export class Benchmark<ResultT, ArgsT> {
         const nameWidth = 50;
         const numWidth = 12;
         
-
         let failureText = '';
 
         console.log(`\nBenchmark Results for: ${this.suite.name}, ${this.suite.cases.length} cases, ${this.suite.implementations.length} implementations`);
         console.log('=====================================');
         let colors = ['red', 'green', 'blue', 'yellow', 'purple', 'orange', 'pink', 'gray', 'brown', 'black'];
         let caseIdx = 0;
+        
         for (const [caseName, caseResults] of this.results) {
             console.log(`\nCase: ${caseName}`);
             // Header
-            console.log(`${'Implementation'.padEnd(nameWidth)} | ${'Avg CPU'.padStart(numWidth)} | ${'Total CPU'.padStart(numWidth)} | Status`);
-            console.log('─'.repeat(nameWidth + numWidth * 2 + 20));
+            console.log(
+                `${'Implementation'.padEnd(nameWidth)} | ` +
+                `${'Avg CPU'.padStart(numWidth)} | ` +
+                `${'Total CPU'.padStart(numWidth)} | ` +
+                `${'Contests Won'.padStart(numWidth)} | ` +
+                `${'Beat Ref'.padStart(numWidth)} | Status`
+            );
+            console.log('─'.repeat(nameWidth + numWidth * 4 + 30));
+            
             // Sort implementations by average CPU time
             const sortedResults = Array.from(caseResults.entries())
                 .sort((a, b) => a[1].avgCpuTime - b[1].avgCpuTime);
@@ -213,14 +236,19 @@ export class Benchmark<ResultT, ArgsT> {
                         }
                     }
                 }
-                const status = result.failures.length === 0 ? '✓' : `✗ (${result.failures.length} failures of ${result.results.length})`;
+                
+                const status = result.failures.length === 0 ? '✓' : `✗ (${result.failures.length} failures)`;
                 const avgCpu = result.avgCpuTime.toFixed(3);
                 const totalCpu = result.totalCpuTime.toFixed(3);
+                const contestWinRate = ((result.contestWins / result.totalContests) * 100).toFixed(1);
+                const beatRefRate = ((result.beatReference / result.totalContests) * 100).toFixed(1);
                 
                 console.log(
                     `${result.implementationName.padEnd(nameWidth)} | ` +
                     `${avgCpu.padStart(numWidth)}ms | ` +
                     `${totalCpu.padStart(numWidth)}ms | ` +
+                    `${contestWinRate.padStart(numWidth)}% | ` +
+                    `${beatRefRate.padStart(numWidth)}% | ` +
                     `${status}`
                 );
 

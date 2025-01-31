@@ -32,7 +32,7 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
         {
             benchmarkName: "Same Room",
             setup_args: () => {
-                let num_cases = 3;
+                let num_cases = 500;
                 let positions = getBenchmarkPositions({
                     topLeftRoom: "W7N3",
                     bottomRightRoom: "W7N3",
@@ -48,25 +48,25 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                 return cases;
             },
         },
-        // {
-        //     benchmarkName: "2 Rooms",
-        //     setup_args: () => {
-        //         let num_cases = 1000;
-        //         let positions = getBenchmarkPositions({
-        //             topLeftRoom: "W8N3",
-        //             bottomRightRoom: "W7N3",
-        //             positionsPerRoom: num_cases + 1
-        //         });
-        //         let cases: PathfindingBenchmarkArgs[] = [];
-        //         for (let i = 0; i < num_cases; i++) {
-        //             cases.push({
-        //                 origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
-        //                 goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
-        //             });
-        //         }
-        //         return cases;
-        //     },
-        // },
+        {
+            benchmarkName: "2 Rooms",
+            setup_args: () => {
+                let num_cases = 400;
+                let positions = getBenchmarkPositions({
+                    topLeftRoom: "W8N3",
+                    bottomRightRoom: "W7N3",
+                    positionsPerRoom: num_cases + 1
+                });
+                let cases: PathfindingBenchmarkArgs[] = [];
+                for (let i = 0; i < num_cases; i++) {
+                    cases.push({
+                        origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
+                        goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
+                    });
+                }
+                return cases;
+            },
+        },
         // {
         //     benchmarkName: "2x2 Rooms",
         //     setup_args: () => {
@@ -86,32 +86,13 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
         //         return cases;
         //     },
         // },
-        // {
-        //     benchmarkName: "3x3 Rooms",
-        //     setup_args: () => {
-        //         let num_cases = 100;
-        //         let positions = getBenchmarkPositions({
-        //             topLeftRoom: "W8N4",
-        //             bottomRightRoom: "W6N2",
-        //             positionsPerRoom: num_cases + 1
-        //         });
-        //         let cases: PathfindingBenchmarkArgs[] = [];
-        //         for (let i = 0; i < num_cases; i++) {
-        //             cases.push({
-        //                 origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
-        //                 goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
-        //             });
-        //         }
-        //         return cases;
-        //     },
-        // },
         {
-            benchmarkName: "5x5 Rooms",
+            benchmarkName: "3x3 Rooms",
             setup_args: () => {
-                let num_cases = 20;
+                let num_cases = 200;
                 let positions = getBenchmarkPositions({
-                    topLeftRoom: "W9N5",
-                    bottomRightRoom: "W5N1",
+                    topLeftRoom: "W8N4",
+                    bottomRightRoom: "W6N2",
                     positionsPerRoom: num_cases + 1
                 });
                 let cases: PathfindingBenchmarkArgs[] = [];
@@ -124,6 +105,25 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
                 return cases;
             },
         },
+        // {
+        //     benchmarkName: "5x5 Rooms",
+        //     setup_args: () => {
+        //         let num_cases = 20;
+        //         let positions = getBenchmarkPositions({
+        //             topLeftRoom: "W9N5",
+        //             bottomRightRoom: "W5N1",
+        //             positionsPerRoom: num_cases + 1
+        //         });
+        //         let cases: PathfindingBenchmarkArgs[] = [];
+        //         for (let i = 0; i < num_cases; i++) {
+        //             cases.push({
+        //                 origins: [toRoomPosition(positions.walkable[(i) % positions.walkable.length])],
+        //                 goals: [toRoomPosition(positions.walkable[(i + 1) % positions.walkable.length])]
+        //             });
+        //         }
+        //         return cases;
+        //     },
+        // },
     ],
     implementations: [
         {
@@ -550,11 +550,69 @@ let suite: BenchmarkSuite<RoomPosition[], PathfindingBenchmarkArgs> = {
 
 let benchmark = new Benchmark(suite);
 
+function wasteCPU(amount: number) {
+    let start = Game.cpu.getUsed();
+    let nothing = 0;
+    while (Game.cpu.getUsed() - start < amount) {
+        nothing++;
+    }
+    return amount;
+}
+
+let suite2: BenchmarkSuite<true, undefined> = {
+    name: "testing",
+    cases: [
+        {
+            benchmarkName: "testing",
+            setup_args: () => {
+                return new Array(1000).fill(undefined);
+            },
+        },
+    ],
+    implementations: [
+        {
+            name: "waste 1 cpu",
+            fn: () => {
+                wasteCPU(1);
+                return true;
+            }
+        },
+        {
+            name: "waste 2 cpu",
+            fn: () => {
+                wasteCPU(2);
+                return true;
+            }
+        },
+        {
+            name: "waste 3 cpu",
+            fn: () => {
+                wasteCPU(3);
+                return true;
+            }
+        },
+        {
+            name: "random 0.5 or 1.5 cpu",
+            fn: () => {
+                let amount = Math.random() < 0.5 ? 0.5 : 1.5;
+                wasteCPU(amount);
+                return true;
+            }
+        },
+    ],
+}
+
+let benchmark2 = new Benchmark(suite2);
 let result_found = false;
+let result_found2 = false;
 export function runBenchmarks() {
-    if (!result_found && benchmark.run()) {
-        result_found = true;
-        benchmark.displayResults()
-        // printBenchmarkResults(results);
+    // if (!result_found && benchmark.run()) {
+    //     result_found = true;
+    //     benchmark.displayResults()
+    //     // printBenchmarkResults(results);
+    // }
+    if (!result_found2 && benchmark2.run()) {
+        result_found2 = true;
+        benchmark2.displayResults()
     }
 }
