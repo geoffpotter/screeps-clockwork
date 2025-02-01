@@ -170,9 +170,10 @@ export default [
           // Measure Clockwork results
           clockworkTime = cpuTime(() => {
             const distanceMap = ephemeral(
-              astarMultiroomDistanceMap([from], [to], {
+              astarMultiroomDistanceMap([from], {
                 costMatrixCallback: getTerrainCostMatrix,
-                maxTiles: 10000
+                maxOps: 10000, 
+                anyOfDestinations: [to]
               })
             );
             if (distanceMap) {

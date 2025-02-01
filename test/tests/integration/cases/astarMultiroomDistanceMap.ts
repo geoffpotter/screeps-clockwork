@@ -143,19 +143,19 @@ describe('astarMultiroomDistanceMap', () => {
     let clockworkDistanceMap: ClockworkMultiroomDistanceMap;
     let clockworkPath: ClockworkPath;
     const cache = new Map<string, ClockworkCostMatrix>();
-    ephemeral(
-      astarMultiroomDistanceMap([from], {
-        costMatrixCallback: roomName => {
-          if (cache.has(roomName)) {
-            return cache.get(roomName);
-          }
-          const costMatrix = ephemeral(getTerrainCostMatrix(roomName));
-          cache.set(roomName, costMatrix);
-          return costMatrix;
-        },
-        anyOfDestinations: [to]
-      })
-    );
+    // ephemeral(
+    //   astarMultiroomDistanceMap([from], {
+    //     costMatrixCallback: roomName => {
+    //       if (cache.has(roomName)) {
+    //         return cache.get(roomName);
+    //       }
+    //       const costMatrix = ephemeral(getTerrainCostMatrix(roomName));
+    //       cache.set(roomName, costMatrix);
+    //       return costMatrix;
+    //     },
+    //     anyOfDestinations: [to]
+    //   })
+    // );
 
     const clockworkTime = cpuTime(() => {
       clockworkDistanceMap = ephemeral(

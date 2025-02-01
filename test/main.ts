@@ -2,6 +2,7 @@ import { initialize } from '../src/index';
 
 import { runTestScenarios } from './basicBot';
 import { run } from './tests';
+import { runBenchmarks } from './tests/helpers/benchmark';
 import { visualize } from './visualizations';
 
 export const loop = () => {
@@ -11,4 +12,5 @@ export const loop = () => {
   initialize(true);
   run();
   visualize();
+  runBenchmarks(Game.cpu.limit * 0.5);
 };
