@@ -2,8 +2,9 @@ import { initialize } from '../src/index';
 
 import { runTestScenarios } from './basicBot';
 import { run } from './tests';
-import { runBenchmarks } from './tests/helpers/benchmark';
+import { runAllBenchmarks } from './tests/helpers/benchmark';
 import { visualize } from './visualizations';
+
 
 export const loop = () => {
   if (Game.cpu.bucket > 500) {
@@ -12,5 +13,5 @@ export const loop = () => {
   initialize(true);
   run();
   visualize();
-  runBenchmarks(Game.cpu.limit * 0.5);
+  runAllBenchmarks();
 };

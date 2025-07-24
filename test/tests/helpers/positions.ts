@@ -113,8 +113,8 @@ function generateRoomPositions(roomName: string): PositionsForRoom {
   const blockedPositions = new Set<number>();
 
   // First pass: find walkable positions
-  for (let x = 0; x < 50; x++) {
-    for (let y = 0; y < 50; y++) {
+  for (let x = 1; x < 49; x++) {
+    for (let y = 1; y < 49; y++) {
       const pos = new RoomPosition(x, y, roomName) as any;
       if (terrain.get(x, y) !== TERRAIN_MASK_WALL) {
         walkablePositions.add(pos.__packedPos);
@@ -123,8 +123,8 @@ function generateRoomPositions(roomName: string): PositionsForRoom {
   }
 
   // Second pass: find blocked positions adjacent to walkable ones
-  for (let x = 0; x < 50; x++) {
-    for (let y = 0; y < 50; y++) {
+  for (let x = 1; x < 49; x++) {
+    for (let y = 1; y < 49; y++) {
       if (terrain.get(x, y) === TERRAIN_MASK_WALL) {
         const pos = new RoomPosition(x, y, roomName) as any;
         // Check if adjacent to walkable
@@ -132,7 +132,7 @@ function generateRoomPositions(roomName: string): PositionsForRoom {
           for (let dy = -1; dy <= 1; dy++) {
             const nx = x + dx;
             const ny = y + dy;
-            if (nx >= 0 && nx < 50 && ny >= 0 && ny < 50) {
+            if (nx >= 1 && nx < 49 && ny >= 1 && ny < 49) {
               const nPos = new RoomPosition(nx, ny, roomName) as any;
               if (walkablePositions.has(nPos.__packedPos)) {
                 blockedPositions.add(pos.__packedPos);

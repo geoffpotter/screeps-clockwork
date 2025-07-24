@@ -10,11 +10,13 @@
     "build:src": "rollup -c",
     "build:docs": "typedoc",
     "build:pserver": "run-s build:lib build:src && rollup -c --environment DEST:pserver",
+    "build:main": "run-s build:lib build:src && rollup -c --environment DEST:main",
     "watch": "run-s build watch:both",
     "watch:lib": "cargo-watch -w lib -s \"npm run build:lib\"",
     "watch:src": "wait-on src/wasm/screeps_clockwork_bg.wasm && rollup -cw",
     "watch:pserver": "rollup -cw --environment DEST:pserver",
-    "watch:both": "run-p watch:lib watch:pserver"
+    "watch:main": "rollup -cw --environment DEST:main",
+    "watch:both": "run-p watch:lib watch:main"
   },
   "repository": {
     "type": "git",
